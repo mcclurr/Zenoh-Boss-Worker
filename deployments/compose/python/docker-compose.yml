@@ -25,7 +25,7 @@ services:
       - zenoh
     command: ["python", "-u", "-m", "rbw.services.orchestrator.main"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/python:/app/out
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
@@ -38,7 +38,7 @@ services:
       - rabbitmq
     command: ["python", "-u", "-m", "rbw.services.worker.main"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/python:/app/out
     environment:
       - WORKER_NAME=worker-python-1
 
@@ -51,7 +51,7 @@ services:
       - rabbitmq
     command: ["python", "-u", "-m", "rbw.services.worker.main"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/python:/app/out
     environment:
       - WORKER_NAME=worker-python-2
 
@@ -64,7 +64,7 @@ services:
       - zenoh
     command: ["python", "-u", "-m", "rbw.services.producer.main"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/python:/app/out
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
@@ -77,6 +77,6 @@ services:
       - zenoh
     command: ["python", "-u", "-m", "rbw.services.consumer.main"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/python:/app/out
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447

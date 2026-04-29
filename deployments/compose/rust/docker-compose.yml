@@ -25,7 +25,7 @@ services:
       - zenoh
     command: ["/app/orchestrator"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/rust:/app/out
     environment:
       - RABBITMQ_HOST=rabbitmq
       - ZENOH_ENDPOINT=tcp/zenoh:7447
@@ -40,7 +40,7 @@ services:
       - rabbitmq
     command: ["/app/worker"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/rust:/app/out
     environment:
       - RABBITMQ_HOST=rabbitmq
       - WORKER_NAME=worker-rust-1
@@ -55,7 +55,7 @@ services:
       - rabbitmq
     command: ["/app/worker"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/rust:/app/out
     environment:
       - RABBITMQ_HOST=rabbitmq
       - WORKER_NAME=worker-rust-2
@@ -70,7 +70,7 @@ services:
       - zenoh
     command: ["python", "-u", "-m", "rbw.services.producer.main"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/rust:/app/out
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
@@ -83,6 +83,6 @@ services:
       - zenoh
     command: ["python", "-u", "-m", "rbw.services.consumer.main"]
     volumes:
-      - ./../../../out:/app/out
+      - ./../../../out/rust:/app/out
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447

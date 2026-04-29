@@ -1,7 +1,7 @@
 use std::{collections::HashSet, time::Duration};
 
 use prost::Message;
-use rbw_rust::{
+use rbw_core::{
     config::{
         DynError, JOBS_QUEUE, ORCHESTRATOR_TO_CONSUMER_KEY, PRODUCER_TO_ORCHESTRATOR_KEY,
         RESULTS_QUEUE,
@@ -26,7 +26,7 @@ async fn main() -> Result<(), DynError> {
     declare_queues(&rabbit_channel).await?;
     info!("[orchestrator] connected to RabbitMQ");
 
-    let zenoh_config = rbw_rust::config::zenoh_client_config()?;
+    let zenoh_config = rbw_core::config::zenoh_client_config()?;
     let zenoh_session = zenoh::open(zenoh_config).await?;
     info!("[orchestrator] connected to Zenoh");
 

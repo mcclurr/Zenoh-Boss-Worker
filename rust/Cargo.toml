@@ -1,0 +1,24 @@
+[package]
+name = "rbw-rust"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+prost = "0.13"
+prost-types = "0.13"
+lapin = "2.5"
+rand = "0.8"
+zenoh = "1"
+flume = "0.11"
+hostname = "0.4"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+chrono = "0.4"
+
+[build-dependencies]
+prost-build = "0.13"

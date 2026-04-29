@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rbw"
+version = "0.1.0"
+description = "Python services for the RBW messaging and workflow testbed"
+requires-python = ">=3.11"
+dependencies = [
+  "pika==1.3.2",
+  "eclipse-zenoh==1.0.0",
+  "protobuf>=7.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

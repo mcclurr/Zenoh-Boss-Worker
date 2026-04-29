@@ -1,0 +1,88 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  zenoh:
+    image: eclipse/zenoh
+    hostname: zenoh
+    ports:
+      - "7447:7447"
+      - "8000:8000"
+    environment:
+      - RUST_LOG=info
+
+  orchestrator:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.rust
+    container_name: orchestrator_rust
+    depends_on:
+      - rabbitmq
+      - zenoh
+    command: ["/app/orchestrator"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+      - RUST_LOG=info
+
+  worker1:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.rust
+    container_name: worker1_rust
+    depends_on:
+      - rabbitmq
+    command: ["/app/worker"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - WORKER_NAME=worker-rust-1
+      - RUST_LOG=info
+
+  worker2:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.rust
+    container_name: worker2_rust
+    depends_on:
+      - rabbitmq
+    command: ["/app/worker"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - WORKER_NAME=worker-rust-2
+      - RUST_LOG=info
+
+  producer:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python
+    container_name: producer_python
+    depends_on:
+      - zenoh
+    command: ["python", "-u", "-m", "rbw.services.producer.main"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+
+  consumer:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python
+    container_name: consumer_python
+    depends_on:
+      - zenoh
+    command: ["python", "-u", "-m", "rbw.services.consumer.main"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447

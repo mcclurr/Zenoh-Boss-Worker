@@ -1,0 +1,82 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  zenoh:
+    image: eclipse/zenoh
+    hostname: zenoh
+    ports:
+      - "7447:7447"
+      - "8000:8000"
+    environment:
+      - RUST_LOG=info
+
+  orchestrator:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python
+    container_name: orchestrator
+    depends_on:
+      - rabbitmq
+      - zenoh
+    command: ["python", "-u", "-m", "rbw.services.orchestrator.main"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+
+  worker1:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python
+    container_name: worker1
+    depends_on:
+      - rabbitmq
+    command: ["python", "-u", "-m", "rbw.services.worker.main"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - WORKER_NAME=worker-python-1
+
+  worker2:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python
+    container_name: worker2
+    depends_on:
+      - rabbitmq
+    command: ["python", "-u", "-m", "rbw.services.worker.main"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - WORKER_NAME=worker-python-2
+
+  producer:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python
+    container_name: producer
+    depends_on:
+      - zenoh
+    command: ["python", "-u", "-m", "rbw.services.producer.main"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+
+  consumer:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python
+    container_name: consumer
+    depends_on:
+      - zenoh
+    command: ["python", "-u", "-m", "rbw.services.consumer.main"]
+    volumes:
+      - ./../../../out:/app/out
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447

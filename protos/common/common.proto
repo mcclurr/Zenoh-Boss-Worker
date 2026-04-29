@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package demo.common;
+
+message RequestContext {
+  string request_id = 1;
+  int64 created_at_unix_ms = 2;
+  string source = 3;
+  map<string, string> tags = 4;
+}

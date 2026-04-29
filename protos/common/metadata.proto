@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package demo.common;
+
+message KeyValue {
+  string key = 1;
+  string value = 2;
+}
+
+message AuditInfo {
+  string created_by = 1;
+  string updated_by = 2;
+  int64 updated_at_unix_ms = 3;
+  repeated KeyValue labels = 4;
+}

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package demo.example1;
+
+import "common/common.proto";
+import "common/metadata.proto";
+
+message WorkPayload {
+  oneof kind {
+    string text = 1;
+    bytes raw_bytes = 2;
+    int64 numeric_value = 3;
+  }
+}
+
+message Job {
+  string batch_id = 1;
+  uint32 job_id = 2;
+  WorkPayload payload = 3;
+  demo.common.RequestContext context = 4;
+  demo.common.AuditInfo audit = 5;
+  repeated string steps = 6;
+}

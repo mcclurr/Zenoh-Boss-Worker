@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install protoc separately from Python packaging
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy project inputs
+COPY python/pyproject.toml /app/pyproject.toml
+COPY python/src/ /app/src/
+COPY protos/ /app/protos/
+
+# Generate Python protobuf code into a standalone top-level import root
+RUN mkdir -p /app/generated && \
+      protoc \
+      -I /app/protos \
+      --python_out=/app/generated \
+      $(find /app/protos -name "*.proto")
+
+# Install the Python package
+RUN pip install --no-cache-dir .
+
+# Handwritten code under /app/src, generated proto modules under /app/generated
+ENV PYTHONPATH=/app/src:/app/generated
+
+CMD ["python", "-u", "-m", "rbw.services.orchestrator.main"]

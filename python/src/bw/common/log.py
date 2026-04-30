@@ -23,6 +23,9 @@ class JsonFormatter(logging.Formatter):
             },
         }
 
+        if record.exc_info:
+            log_entry["fields"]["exception"] = self.formatException(record.exc_info)
+
         return json.dumps(log_entry, ensure_ascii=False)
 
 def init_logging(prefix: str) -> logging.Logger:

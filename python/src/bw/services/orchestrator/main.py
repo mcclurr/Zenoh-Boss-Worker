@@ -8,8 +8,8 @@ from bw.messaging.rabbitmq import (
 )
 from bw.messaging.zenoh import (
     ORCHESTRATOR_TO_CONSUMER_KEY,
-    TOPIC_A_KEY,
-    TOPIC_B_KEY,
+    JOBS_BATCH_KEY,
+    WORKER_STATUS_KEY,
     open_zenoh_session,
 )
 from bw.services.orchestrator.batch_runner import BatchRunner
@@ -45,14 +45,14 @@ def main() -> None:
             match_window_seconds=MATCH_WINDOW_SECONDS,
         )
 
-        zenoh_session.declare_subscriber(TOPIC_A_KEY, coordinator.on_topic_a)
-        zenoh_session.declare_subscriber(TOPIC_B_KEY, coordinator.on_topic_b)
+        zenoh_session.declare_subscriber(JOBS_BATCH_KEY, coordinator.on_topic_a)
+        zenoh_session.declare_subscriber(WORKER_STATUS_KEY, coordinator.on_topic_b)
 
         logger.info(
             "[orchestrator] subscribed to topic_a=%s topic_b=%s "
             "match_window=%.3fs",
-            TOPIC_A_KEY,
-            TOPIC_B_KEY,
+            JOBS_BATCH_KEY,
+            WORKER_STATUS_KEY,
             MATCH_WINDOW_SECONDS,
         )
 

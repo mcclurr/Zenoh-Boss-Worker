@@ -22,3 +22,9 @@ message CombinedInput {
   TopicBMessage topic_b = 3;
   demo.common.RequestContext context = 4;
 }
+
+message WorkerMessage {
+  string cycle_id = 1;
+  string worker_id = 2;
+  demo.common.RequestContext context = 3;
+}

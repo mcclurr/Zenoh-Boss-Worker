@@ -14,7 +14,7 @@ COPY rust/Cargo.toml /src/Cargo.toml
 COPY rust/Cargo.lock* /src/
 COPY rust/bw-core /src/bw-core
 COPY rust/services /src/services
-COPY protos /protos
+COPY proto /proto
 
 RUN cargo chef prepare --recipe-path recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json

@@ -5,13 +5,13 @@ fn main() {
     config
         .compile_protos(
             &[
-                "../../protos/common/common.proto",
-                "../../protos/common/metadata.proto",
-                "../../protos/example1/job.proto",
-                "../../protos/example1/result.proto",
-                "../../protos/example1/batch.proto",
+                "../../proto/common/common.proto",
+                "../../proto/common/metadata.proto",
+                "../../proto/example1/job.proto",
+                "../../proto/example1/result.proto",
+                "../../proto/example1/batch.proto",
             ],
-            &["../../protos"],
+            &["../../proto"],
         )
         .expect("failed to compile protos");
 }

@@ -4,13 +4,13 @@ WORKDIR /app
 
 COPY python/pyproject.toml /app/pyproject.toml
 COPY python/src/ /app/src/
-COPY protos/ /app/protos/
+COPY proto/ /app/proto/
 
 RUN mkdir -p /app/generated && \
     protoc \
-    -I /app/protos \
+    -I /app/proto \
       --python_out=/app/generated \
-      $(find /app/protos -name "*.proto")
+      $(find /app/proto -name "*.proto")
 
 RUN pip install --no-cache-dir .
 ENV PYTHONPATH=/app/src:/app/generated

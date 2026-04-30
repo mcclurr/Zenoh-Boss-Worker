@@ -2,7 +2,7 @@ import queue
 import threading
 from typing import Optional
 
-from example1 import result_pb2
+from chores import chores_pb2
 
 from bw.messaging.rabbitmq import (
     RESULTS_QUEUE,
@@ -17,7 +17,7 @@ class RabbitResultDispatcher:
         self.lock = threading.Lock()
         self.ready = threading.Event()
         self.startup_error: Exception | None = None
-        self.result_queues: dict[str, queue.Queue[result_pb2.JobResult]] = {}
+        self.result_queues: dict[str, queue.Queue[chores_pb2.ChoreFilterResult]] = {}
         self.thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
@@ -41,18 +41,21 @@ class RabbitResultDispatcher:
 
         self.logger.info("[result-dispatcher] ready")
 
-    def register_batch(self, batch_id: str) -> queue.Queue[result_pb2.JobResult]:
+    def register_batch(
+        self,
+        filter_id: str,
+    ) -> queue.Queue[chores_pb2.ChoreFilterResult]:
         with self.lock:
-            if batch_id in self.result_queues:
-                raise RuntimeError(f"Batch is already registered: {batch_id}")
+            if filter_id in self.result_queues:
+                raise RuntimeError(f"Filter is already registered: {filter_id}")
 
-            result_queue: queue.Queue[result_pb2.JobResult] = queue.Queue()
-            self.result_queues[batch_id] = result_queue
+            result_queue: queue.Queue[chores_pb2.ChoreFilterResult] = queue.Queue()
+            self.result_queues[filter_id] = result_queue
             return result_queue
 
-    def unregister_batch(self, batch_id: str) -> None:
+    def unregister_batch(self, filter_id: str) -> None:
         with self.lock:
-            self.result_queues.pop(batch_id, None)
+            self.result_queues.pop(filter_id, None)
 
     def _run(self) -> None:
         try:
@@ -67,19 +70,19 @@ class RabbitResultDispatcher:
 
             def callback(ch, method, properties, body) -> None:
                 try:
-                    result = result_pb2.JobResult()
+                    result = chores_pb2.ChoreFilterResult()
                     result.ParseFromString(body)
 
                     with self.lock:
-                        result_queue = self.result_queues.get(result.batch_id)
+                        result_queue = self.result_queues.get(result.filter_id)
 
                     if result_queue is None:
                         self.logger.warning(
                             "[result-dispatcher] no waiter for result: "
-                            "batch_id=%s job_id=%s worker=%s",
-                            result.batch_id,
-                            result.job_id,
-                            result.worker,
+                            "filter_id=%s chores_id=%s person_id=%s",
+                            result.filter_id,
+                            result.chores_id,
+                            result.person.person_id,
                         )
                         ch.basic_ack(delivery_tag=method.delivery_tag)
                         return
@@ -88,10 +91,12 @@ class RabbitResultDispatcher:
 
                     self.logger.info(
                         "[result-dispatcher] routed result: "
-                        "batch_id=%s job_id=%s worker=%s",
-                        result.batch_id,
-                        result.job_id,
-                        result.worker,
+                        "filter_id=%s chores_id=%s person_id=%s accepted=%s rejected=%s",
+                        result.filter_id,
+                        result.chores_id,
+                        result.person.person_id,
+                        len(result.accepted_chores),
+                        len(result.rejected_chores),
                     )
 
                     ch.basic_ack(delivery_tag=method.delivery_tag)

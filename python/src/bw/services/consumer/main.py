@@ -1,6 +1,6 @@
 import time
 
-from example1 import batch_pb2
+from chores import chores_pb2
 
 from bw.common.log import init_logging
 from bw.messaging.zenoh import (
@@ -13,28 +13,47 @@ def main() -> None:
     logger = init_logging("consumer")
 
     with open_zenoh_session() as session:
-        logger.info(f"[consumer] subscribed to {ORCHESTRATOR_TO_CONSUMER_KEY}")
+        logger.info("[consumer] subscribed to %s", ORCHESTRATOR_TO_CONSUMER_KEY)
 
         def on_summary(sample):
             try:
-                summary = batch_pb2.BatchSummary()
+                summary = chores_pb2.ChoreFilterSummary()
                 summary.ParseFromString(sample.payload.to_bytes())
 
                 logger.info(
-                    f"[consumer] received summary: "
-                    f"batch_id={summary.batch_id} "
-                    f"total_jobs={summary.total_jobs} "
-                    f"results_received={summary.results_received}"
+                    "[consumer] received chore filter summary: "
+                    "chores_id=%s people_evaluated=%s total_chores_accepted=%s",
+                    summary.chores_id,
+                    summary.total_people_evaluated,
+                    summary.total_chores_accepted,
                 )
 
                 for result in summary.results:
+                    accepted = [
+                        f"{chore.name}({chore.estimated_minutes}m)"
+                        for chore in result.accepted_chores
+                    ]
+                    rejected = [
+                        f"{chore.name}({chore.estimated_minutes}m)"
+                        for chore in result.rejected_chores
+                    ]
+
                     logger.info(
-                        f"[consumer] result: "
-                        f"job_id={result.job_id} worker={result.worker} "
-                        f"result={result.result}"
+                        "[consumer] filter result: "
+                        "filter_id=%s person_id=%s available_minutes=%s "
+                        "used_minutes=%s remaining_minutes=%s "
+                        "accepted=%s rejected=%s",
+                        result.filter_id,
+                        result.person.person_id,
+                        result.person.available_minutes,
+                        result.used_minutes,
+                        result.remaining_minutes,
+                        accepted,
+                        rejected,
                     )
+
             except Exception as exc:
-                logger.exception(f"[consumer] failed to decode output: {exc}")
+                logger.exception("[consumer] failed to decode output: %s", exc)
 
         session.declare_subscriber(ORCHESTRATOR_TO_CONSUMER_KEY, on_summary)
 

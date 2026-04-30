@@ -3,34 +3,34 @@ import threading
 import time
 from dataclasses import dataclass
 
-from example1 import batch_pb2, input_pair_pb2
+from chores import chores_pb2
 
 from bw.services.orchestrator.batch_runner import BatchRunner
 
 
-WORKER_GATHER_WINDOW_SECONDS = float(
-    os.getenv("WORKER_GATHER_WINDOW_SECONDS", "")
+PERSON_GATHER_WINDOW_SECONDS = float(
+    os.getenv("PERSON_GATHER_WINDOW_SECONDS", "")
 )
 
-MAX_ACTIVE_WORKERS = int(os.getenv("MAX_ACTIVE_WORKERS", ""))
+MAX_ACTIVE_FILTERS = int(os.getenv("MAX_ACTIVE_FILTERS", ""))
 
-WORKER_LAST_SUCCESS_TTL_SECONDS = float(
-    os.getenv("WORKER_LAST_SUCCESS_TTL_SECONDS", "")
+PERSON_LAST_SELECTED_TTL_SECONDS = float(
+    os.getenv("PERSON_LAST_SELECTED_TTL_SECONDS", "")
 )
 
 
 @dataclass
-class PendingWorker:
-    message: input_pair_pb2.WorkerMessage
+class PendingPerson:
+    message: chores_pb2.PersonAvailability
     received_monotonic: float
     sequence_number: int
 
 
 @dataclass
-class BatchWindow:
-    jobs_batch: batch_pb2.BatchRequest
+class ChoresWindow:
+    chores: chores_pb2.Chores
     received_monotonic: float
-    pending_workers: dict[str, PendingWorker]
+    pending_people: dict[str, PendingPerson]
     timer: threading.Timer | None
     sequence_number: int = 0
 
@@ -47,107 +47,95 @@ class BatchCoordinator:
         self.match_window_seconds = match_window_seconds
 
         self.lock = threading.Lock()
+        self.current_window: ChoresWindow | None = None
 
-        self.current_window: BatchWindow | None = None
+        self.active_filter_count = 0
 
-        self.active_worker_count = 0
-
-        # worker_id -> last successful monotonic timestamp
-        self.worker_last_success: dict[str, float] = {}
+        # person_id -> last selected monotonic timestamp
+        self.person_last_selected: dict[str, float] = {}
 
     def on_topic_a(self, sample) -> None:
-        """
-        Jobs batch arrived.
-
-        This starts a short collection window. Worker messages that arrive
-        during this window are candidates for this jobs batch.
-        """
-        jobs_batch = batch_pb2.BatchRequest()
-        jobs_batch.ParseFromString(sample.payload.to_bytes())
+        chores = chores_pb2.Chores()
+        chores.ParseFromString(sample.payload.to_bytes())
         now = time.monotonic()
 
         with self.lock:
             if self.current_window is not None:
-                dropped_workers = len(self.current_window.pending_workers)
+                dropped_people = len(self.current_window.pending_people)
 
                 if self.current_window.timer is not None:
                     self.current_window.timer.cancel()
 
                 self.logger.info(
-                    "[orchestrator] replacing unflushed jobs window: "
-                    "old_batch_id=%s dropped_workers=%s",
-                    self.current_window.jobs_batch.batch_id,
-                    dropped_workers,
+                    "[orchestrator] replacing unflushed chores window: "
+                    "old_chores_id=%s dropped_people=%s",
+                    self.current_window.chores.chores_id,
+                    dropped_people,
                 )
 
             timer = threading.Timer(
-                WORKER_GATHER_WINDOW_SECONDS,
+                PERSON_GATHER_WINDOW_SECONDS,
                 self._flush_current_window,
             )
             timer.daemon = True
 
-            self.current_window = BatchWindow(
-                jobs_batch=jobs_batch,
+            self.current_window = ChoresWindow(
+                chores=chores,
                 received_monotonic=now,
-                pending_workers={},
+                pending_people={},
                 timer=timer,
             )
 
             timer.start()
 
         self.logger.info(
-            "[orchestrator] received jobs batch: batch_id=%s total_jobs=%s "
-            "worker_gather_window=%.3fs",
-            jobs_batch.batch_id,
-            jobs_batch.total_jobs,
-            WORKER_GATHER_WINDOW_SECONDS,
+            "[orchestrator] received chores: chores_id=%s chores=%s "
+            "person_gather_window=%.3fs",
+            chores.chores_id,
+            len(chores.chores),
+            PERSON_GATHER_WINDOW_SECONDS,
         )
 
     def on_topic_b(self, sample) -> None:
-        """
-        Worker message arrived.
-
-        Only worker messages that arrive during the current jobs batch window
-        are considered. If there is no active jobs window, the worker message is
-        dropped.
-        """
-        worker_msg = input_pair_pb2.WorkerMessage()
-        worker_msg.ParseFromString(sample.payload.to_bytes())
+        person = chores_pb2.PersonAvailability()
+        person.ParseFromString(sample.payload.to_bytes())
         now = time.monotonic()
 
         with self.lock:
             if self.current_window is None:
                 self.logger.info(
-                    "[orchestrator] dropping worker message because no active "
-                    "jobs window exists: cycle_id=%s worker_id=%s",
-                    worker_msg.cycle_id,
-                    worker_msg.worker_id,
+                    "[orchestrator] dropping person availability because no active "
+                    "chores window exists: cycle_id=%s person_id=%s",
+                    person.cycle_id,
+                    person.person_id,
                 )
                 return
 
             self.current_window.sequence_number += 1
 
-            self.current_window.pending_workers[worker_msg.worker_id] = PendingWorker(
-                message=worker_msg,
+            self.current_window.pending_people[person.person_id] = PendingPerson(
+                message=person,
                 received_monotonic=now,
                 sequence_number=self.current_window.sequence_number,
             )
 
-            pending_count = len(self.current_window.pending_workers)
-            batch_id = self.current_window.jobs_batch.batch_id
+            pending_count = len(self.current_window.pending_people)
+            chores_id = self.current_window.chores.chores_id
 
         self.logger.info(
-            "[orchestrator] received worker message for current batch: "
-            "batch_id=%s cycle_id=%s worker_id=%s pending_unique_workers=%s",
-            batch_id,
-            worker_msg.cycle_id,
-            worker_msg.worker_id,
+            "[orchestrator] received person availability for current chores: "
+            "chores_id=%s cycle_id=%s person_id=%s available_minutes=%s "
+            "pending_unique_people=%s",
+            chores_id,
+            person.cycle_id,
+            person.person_id,
+            person.available_minutes,
             pending_count,
         )
 
     def expire_stale_if_idle(self, now: float) -> None:
         with self.lock:
-            self._prune_worker_history_locked(now)
+            self._prune_person_history_locked(now)
 
     def _flush_current_window(self) -> None:
         with self.lock:
@@ -157,139 +145,136 @@ class BatchCoordinator:
             window = self.current_window
             self.current_window = None
 
-            available_slots = MAX_ACTIVE_WORKERS - self.active_worker_count
+            available_slots = MAX_ACTIVE_FILTERS - self.active_filter_count
 
             if available_slots <= 0:
-                dropped_count = len(window.pending_workers)
+                dropped_count = len(window.pending_people)
 
                 self.logger.info(
-                    "[orchestrator] dropping jobs window because no worker slots "
-                    "are available: batch_id=%s active=%s max=%s "
-                    "dropped_workers=%s",
-                    window.jobs_batch.batch_id,
-                    self.active_worker_count,
-                    MAX_ACTIVE_WORKERS,
+                    "[orchestrator] dropping chores window because no filter slots "
+                    "are available: chores_id=%s active=%s max=%s "
+                    "dropped_people=%s",
+                    window.chores.chores_id,
+                    self.active_filter_count,
+                    MAX_ACTIVE_FILTERS,
                     dropped_count,
                 )
                 return
 
-            if not window.pending_workers:
+            if not window.pending_people:
                 self.logger.info(
-                    "[orchestrator] dropping jobs window because no worker "
-                    "messages arrived: batch_id=%s",
-                    window.jobs_batch.batch_id,
+                    "[orchestrator] dropping chores window because no person "
+                    "availability messages arrived: chores_id=%s",
+                    window.chores.chores_id,
                 )
                 return
 
-            workers_to_run = self._choose_workers_to_run_locked(
-                workers=list(window.pending_workers.values()),
-                max_workers=available_slots,
+            people_to_run = self._choose_people_to_run_locked(
+                people=list(window.pending_people.values()),
+                max_people=available_slots,
             )
 
-            selected_worker_ids = {
-                pending_worker.message.worker_id
-                for pending_worker in workers_to_run
+            selected_person_ids = {
+                pending_person.message.person_id
+                for pending_person in people_to_run
             }
 
-            dropped_worker_ids = [
-                worker_id
-                for worker_id in window.pending_workers.keys()
-                if worker_id not in selected_worker_ids
+            dropped_person_ids = [
+                person_id
+                for person_id in window.pending_people.keys()
+                if person_id not in selected_person_ids
             ]
 
-            jobs_batch = batch_pb2.BatchRequest()
-            jobs_batch.CopyFrom(window.jobs_batch)
+            chores = chores_pb2.Chores()
+            chores.CopyFrom(window.chores)
 
-            for pending_worker in workers_to_run:
-                worker_msg = input_pair_pb2.WorkerMessage()
-                worker_msg.CopyFrom(pending_worker.message)
+            now = time.monotonic()
 
-                self.active_worker_count += 1
+            for pending_person in people_to_run:
+                person = chores_pb2.PersonAvailability()
+                person.CopyFrom(pending_person.message)
+
+                self.active_filter_count += 1
+                self.person_last_selected[person.person_id] = now
 
                 thread = threading.Thread(
-                    target=self._run_worker_thread,
-                    args=(jobs_batch, worker_msg),
+                    target=self._run_filter_thread,
+                    args=(chores, person),
                     daemon=True,
                 )
                 thread.start()
 
             self.logger.info(
-                "[orchestrator] flushed jobs window: batch_id=%s selected=%s "
+                "[orchestrator] flushed chores window: chores_id=%s selected=%s "
                 "dropped=%s active=%s max=%s",
-                jobs_batch.batch_id,
-                list(selected_worker_ids),
-                dropped_worker_ids,
-                self.active_worker_count,
-                MAX_ACTIVE_WORKERS,
+                chores.chores_id,
+                list(selected_person_ids),
+                dropped_person_ids,
+                self.active_filter_count,
+                MAX_ACTIVE_FILTERS,
             )
 
-    def _choose_workers_to_run_locked(
+    def _choose_people_to_run_locked(
         self,
-        workers: list[PendingWorker],
-        max_workers: int,
-    ) -> list[PendingWorker]:
-        """
-        Priority:
-        1. Workers that have never completed successfully.
-        2. Workers with the oldest successful completion time.
-        3. Earlier arrival in this batch window.
-        """
+        people: list[PendingPerson],
+        max_people: int,
+    ) -> list[PendingPerson]:
         prioritized = sorted(
-            workers,
-            key=lambda pending_worker: (
-                self.worker_last_success.get(
-                    pending_worker.message.worker_id,
+            people,
+            key=lambda pending_person: (
+                self.person_last_selected.get(
+                    pending_person.message.person_id,
                     0.0,
                 ),
-                pending_worker.sequence_number,
+                pending_person.sequence_number,
             ),
         )
 
-        return prioritized[:max_workers]
+        return prioritized[:max_people]
 
-    def _run_worker_thread(
+    def _run_filter_thread(
         self,
-        jobs_batch: batch_pb2.BatchRequest,
-        worker_msg: input_pair_pb2.WorkerMessage,
+        chores: chores_pb2.Chores,
+        person: chores_pb2.PersonAvailability,
     ) -> None:
         succeeded = False
 
         try:
-            self.batch_runner.run_worker_batch(
-                jobs_batch=jobs_batch,
-                worker_msg=worker_msg,
+            self.batch_runner.run_chore_filter(
+                chores=chores,
+                person=person,
             )
             succeeded = True
 
         except Exception:
             self.logger.exception(
-                "[orchestrator] failed to run worker batch: worker_id=%s",
-                worker_msg.worker_id,
+                "[orchestrator] failed to run chore filter: person_id=%s",
+                person.person_id,
             )
 
         finally:
             now = time.monotonic()
 
             with self.lock:
-                self.active_worker_count -= 1
+                self.active_filter_count -= 1
 
-                if succeeded:
-                    self.worker_last_success[worker_msg.worker_id] = now
+                if not succeeded:
+                    self.person_last_selected.pop(person.person_id, None)
 
-                self._prune_worker_history_locked(now)
+                self._prune_person_history_locked(now)
 
-    def _prune_worker_history_locked(self, now: float) -> None:
-        stale_worker_ids = [
-            worker_id
-            for worker_id, last_success in self.worker_last_success.items()
-            if now - last_success > WORKER_LAST_SUCCESS_TTL_SECONDS
+    def _prune_person_history_locked(self, now: float) -> None:
+        stale_person_ids = [
+            person_id
+            for person_id, last_selected in self.person_last_selected.items()
+            if now - last_selected > PERSON_LAST_SELECTED_TTL_SECONDS
         ]
 
-        for worker_id in stale_worker_ids:
-            del self.worker_last_success[worker_id]
+        for person_id in stale_person_ids:
+            del self.person_last_selected[person_id]
 
-        if stale_worker_ids:
+        if stale_person_ids:
             self.logger.info(
-                "[orchestrator] pruned worker history: count=%s",
-                len(stale_worker_ids),
+                "[orchestrator] pruned person history: count=%s",
+                len(stale_person_ids),
             )

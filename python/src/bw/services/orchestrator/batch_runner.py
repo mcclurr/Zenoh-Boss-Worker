@@ -3,7 +3,7 @@ import queue
 import threading
 import time
 
-from example1 import batch_pb2, input_pair_pb2, result_pb2
+from chores import chores_pb2
 
 from bw.messaging.rabbitmq import (
     JOBS_QUEUE,
@@ -14,7 +14,7 @@ from bw.messaging.rabbitmq import (
 from bw.services.orchestrator.result_dispatcher import RabbitResultDispatcher
 
 
-RESULT_TIMEOUT_SECONDS = float(os.getenv("RESULT_TIMEOUT_SECONDS", "30"))
+RESULT_TIMEOUT_SECONDS = float(os.getenv("RESULT_TIMEOUT_SECONDS", ""))
 
 
 class BatchRunner:
@@ -29,70 +29,70 @@ class BatchRunner:
         self.logger = logger
         self.consumer_pub_lock = threading.Lock()
 
-    def run_worker_batch(
+    def run_chore_filter(
         self,
-        jobs_batch: batch_pb2.BatchRequest,
-        worker_msg: input_pair_pb2.WorkerMessage,
+        chores: chores_pb2.Chores,
+        person: chores_pb2.PersonAvailability,
     ) -> None:
-        batch_id = f"{jobs_batch.batch_id}-{worker_msg.worker_id}"
+        filter_id = f"{chores.chores_id}-{person.person_id}"
 
         self.logger.info(
-            "[orchestrator] running worker batch: "
-            "source_batch_id=%s run_batch_id=%s selected_worker_id=%s total_jobs=%s",
-            jobs_batch.batch_id,
-            batch_id,
-            worker_msg.worker_id,
-            jobs_batch.total_jobs,
+            "[orchestrator] running chore filter: "
+            "chores_id=%s filter_id=%s person_id=%s chores=%s available_minutes=%s",
+            chores.chores_id,
+            filter_id,
+            person.person_id,
+            len(chores.chores),
+            person.available_minutes,
         )
 
-        result_queue = self.result_dispatcher.register_batch(batch_id)
+        result_queue = self.result_dispatcher.register_batch(filter_id)
 
         try:
-            worker_batch_request = self._build_worker_batch_request(
-                batch_id=batch_id,
-                jobs_batch=jobs_batch,
-                worker_msg=worker_msg,
+            request = self._build_chore_filter_request(
+                filter_id=filter_id,
+                chores=chores,
+                person=person,
             )
 
-            self._publish_worker_batch_request(worker_batch_request)
+            self._publish_chore_filter_request(request)
 
             results = self._wait_for_results(
-                batch_id=batch_id,
+                filter_id=filter_id,
                 expected_result_count=1,
                 result_queue=result_queue,
             )
 
             summary = self._build_summary(
-                batch_id=batch_id,
-                total_jobs=jobs_batch.total_jobs,
-                context=jobs_batch.context,
+                chores_id=chores.chores_id,
+                context=chores.context,
                 results=results,
             )
 
             self._publish_summary(summary)
 
         finally:
-            self.result_dispatcher.unregister_batch(batch_id)
+            self.result_dispatcher.unregister_batch(filter_id)
 
-    def _build_worker_batch_request(
+    def _build_chore_filter_request(
         self,
-        batch_id: str,
-        jobs_batch: batch_pb2.BatchRequest,
-        worker_msg: input_pair_pb2.WorkerMessage,
-    ) -> batch_pb2.WorkerBatchRequest:
-        request = batch_pb2.WorkerBatchRequest(
-            batch_id=batch_id,
-            context=jobs_batch.context,
+        filter_id: str,
+        chores: chores_pb2.Chores,
+        person: chores_pb2.PersonAvailability,
+    ) -> chores_pb2.ChoreFilterRequest:
+        request = chores_pb2.ChoreFilterRequest(
+            filter_id=filter_id,
+            context=chores.context,
         )
 
-        request.jobs_batch.CopyFrom(jobs_batch)
-        request.worker.CopyFrom(worker_msg)
+        request.chores.CopyFrom(chores)
+        request.person.CopyFrom(person)
 
         return request
 
-    def _publish_worker_batch_request(
+    def _publish_chore_filter_request(
         self,
-        request: batch_pb2.WorkerBatchRequest,
+        request: chores_pb2.ChoreFilterRequest,
     ) -> None:
         connection = connect_with_retry(logger=self.logger)
 
@@ -107,12 +107,13 @@ class BatchRunner:
             )
 
             self.logger.info(
-                "[orchestrator] queued worker batch request: "
-                "batch_id=%s source_batch_id=%s selected_worker_id=%s jobs=%s",
-                request.batch_id,
-                request.jobs_batch.batch_id,
-                request.worker.worker_id,
-                len(request.jobs_batch.jobs),
+                "[orchestrator] queued chore filter request: "
+                "filter_id=%s chores_id=%s person_id=%s chores=%s available_minutes=%s",
+                request.filter_id,
+                request.chores.chores_id,
+                request.person.person_id,
+                len(request.chores.chores),
+                request.person.available_minutes,
             )
 
         finally:
@@ -125,28 +126,28 @@ class BatchRunner:
 
     def _wait_for_results(
         self,
-        batch_id: str,
+        filter_id: str,
         expected_result_count: int,
-        result_queue: queue.Queue[result_pb2.JobResult],
-    ) -> list[result_pb2.JobResult]:
+        result_queue: queue.Queue[chores_pb2.ChoreFilterResult],
+    ) -> list[chores_pb2.ChoreFilterResult]:
         self.logger.info(
-            "[orchestrator] waiting for worker-batch results: "
-            "batch_id=%s expected=%s",
-            batch_id,
+            "[orchestrator] waiting for chore filter results: "
+            "filter_id=%s expected=%s",
+            filter_id,
             expected_result_count,
         )
 
         deadline = time.monotonic() + RESULT_TIMEOUT_SECONDS
-        results: list[result_pb2.JobResult] = []
-        seen_result_ids: set[int] = set()
+        results: list[chores_pb2.ChoreFilterResult] = []
+        seen_filter_ids: set[str] = set()
 
         while len(results) < expected_result_count:
             remaining = deadline - time.monotonic()
 
             if remaining <= 0:
                 raise TimeoutError(
-                    f"Timed out waiting for worker-batch result: "
-                    f"batch_id={batch_id} received={len(results)} "
+                    f"Timed out waiting for chore filter result: "
+                    f"filter_id={filter_id} received={len(results)} "
                     f"expected={expected_result_count}"
                 )
 
@@ -155,56 +156,63 @@ class BatchRunner:
             except queue.Empty:
                 continue
 
-            if result.job_id in seen_result_ids:
+            if result.filter_id in seen_filter_ids:
                 self.logger.warning(
-                    "[orchestrator] ignoring duplicate worker-batch result: "
-                    "batch_id=%s result_id=%s",
-                    result.batch_id,
-                    result.job_id,
+                    "[orchestrator] ignoring duplicate chore filter result: "
+                    "filter_id=%s",
+                    result.filter_id,
                 )
                 continue
 
-            seen_result_ids.add(result.job_id)
+            seen_filter_ids.add(result.filter_id)
             results.append(result)
 
             self.logger.info(
-                "[orchestrator] received worker-batch result %s/%s: "
-                "batch_id=%s result_id=%s actual_worker=%s result=%s",
+                "[orchestrator] received chore filter result %s/%s: "
+                "filter_id=%s chores_id=%s person_id=%s accepted=%s rejected=%s "
+                "used_minutes=%s remaining_minutes=%s",
                 len(results),
                 expected_result_count,
-                result.batch_id,
-                result.job_id,
-                result.worker,
-                result.result,
+                result.filter_id,
+                result.chores_id,
+                result.person.person_id,
+                len(result.accepted_chores),
+                len(result.rejected_chores),
+                result.used_minutes,
+                result.remaining_minutes,
             )
 
         return results
 
     def _build_summary(
         self,
-        batch_id: str,
-        total_jobs: int,
+        chores_id: str,
         context,
-        results: list[result_pb2.JobResult],
-    ) -> batch_pb2.BatchSummary:
-        summary = batch_pb2.BatchSummary(
-            batch_id=batch_id,
-            total_jobs=total_jobs,
-            results_received=len(results),
+        results: list[chores_pb2.ChoreFilterResult],
+    ) -> chores_pb2.ChoreFilterSummary:
+        total_chores_accepted = sum(
+            len(result.accepted_chores)
+            for result in results
+        )
+
+        summary = chores_pb2.ChoreFilterSummary(
+            chores_id=chores_id,
+            total_people_evaluated=len(results),
+            total_chores_accepted=total_chores_accepted,
             context=context,
         )
 
         summary.results.extend(results)
         return summary
 
-    def _publish_summary(self, summary: batch_pb2.BatchSummary) -> None:
+    def _publish_summary(self, summary: chores_pb2.ChoreFilterSummary) -> None:
         with self.consumer_pub_lock:
             self.consumer_pub.put(summary.SerializeToString())
 
         self.logger.info(
-            "[orchestrator] published batch summary to zenoh: "
-            "batch_id=%s total_jobs=%s results_received=%s",
-            summary.batch_id,
-            summary.total_jobs,
-            summary.results_received,
+            "[orchestrator] published chore filter summary to zenoh: "
+            "chores_id=%s people_evaluated=%s chores_accepted=%s",
+            summary.chores_id,
+            summary.total_people_evaluated,
+            summary.total_chores_accepted,
         )

@@ -1,7 +1,7 @@
 import os
 import time
 
-from example1 import batch_pb2, job_pb2, result_pb2
+from chores import chores_pb2
 
 from bw.common.log import init_logging
 from bw.messaging.rabbitmq import (
@@ -27,24 +27,25 @@ def main() -> None:
 
     channel.basic_qos(prefetch_count=1)
 
-    logger.info("[worker %s] connected and waiting for worker-batch requests", worker_name)
+    logger.info("[worker %s] connected and waiting for chore filter requests", worker_name)
 
     def callback(ch, method, properties, body):
         try:
-            request = batch_pb2.WorkerBatchRequest()
+            request = chores_pb2.ChoreFilterRequest()
             request.ParseFromString(body)
 
             logger.info(
-                "[worker %s] got worker-batch request: "
-                "batch_id=%s source_batch_id=%s selected_worker_id=%s jobs=%s",
+                "[worker %s] got chore filter request: "
+                "filter_id=%s chores_id=%s person_id=%s chores=%s available_minutes=%s",
                 worker_name,
-                request.batch_id,
-                request.jobs_batch.batch_id,
-                request.worker.worker_id,
-                len(request.jobs_batch.jobs),
+                request.filter_id,
+                request.chores.chores_id,
+                request.person.person_id,
+                len(request.chores.chores),
+                request.person.available_minutes,
             )
 
-            result = process_worker_batch_request(
+            result = process_chore_filter_request(
                 request=request,
                 actual_worker_name=worker_name,
                 logger=logger,
@@ -53,12 +54,15 @@ def main() -> None:
             publish_bytes(ch, RESULTS_QUEUE, result.SerializeToString())
 
             logger.info(
-                "[worker %s] sent worker-batch result: "
-                "batch_id=%s result_id=%s result=%s",
+                "[worker %s] sent chore filter result: "
+                "filter_id=%s person_id=%s accepted=%s rejected=%s used_minutes=%s remaining_minutes=%s",
                 worker_name,
-                result.batch_id,
-                result.job_id,
-                result.result,
+                result.filter_id,
+                result.person.person_id,
+                len(result.accepted_chores),
+                len(result.rejected_chores),
+                result.used_minutes,
+                result.remaining_minutes,
             )
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -76,65 +80,66 @@ def main() -> None:
     channel.start_consuming()
 
 
-def process_worker_batch_request(
-    request: batch_pb2.WorkerBatchRequest,
+def process_chore_filter_request(
+    request: chores_pb2.ChoreFilterRequest,
     actual_worker_name: str,
     logger,
-) -> result_pb2.JobResult:
-    jobs_batch = request.jobs_batch
-    selected_worker = request.worker
+) -> chores_pb2.ChoreFilterResult:
+    person = request.person
+    available_minutes = person.available_minutes
 
-    processed_outputs: list[str] = []
+    accepted_chores: list[chores_pb2.Chore] = []
+    rejected_chores: list[chores_pb2.Chore] = []
 
-    for job in jobs_batch.jobs:
-        payload_value = _payload_to_string(job.payload)
+    used_minutes = 0
 
-        logger.info(
-            "[worker %s] processing bundled job: "
-            "request_batch_id=%s selected_worker_id=%s job_id=%s payload=%s",
-            actual_worker_name,
-            request.batch_id,
-            selected_worker.worker_id,
-            job.job_id,
-            payload_value,
-        )
+    for chore in request.chores.chores:
+        if used_minutes + chore.estimated_minutes <= available_minutes:
+            accepted_chores.append(chore)
+            used_minutes += chore.estimated_minutes
 
-        processed_outputs.append(
-            f"job_id={job.job_id}:processed-{payload_value}"
-        )
+            logger.info(
+                "[worker %s] accepted chore: filter_id=%s person_id=%s "
+                "chore_id=%s name=%s estimated_minutes=%s used_minutes=%s",
+                actual_worker_name,
+                request.filter_id,
+                person.person_id,
+                chore.chore_id,
+                chore.name,
+                chore.estimated_minutes,
+                used_minutes,
+            )
+        else:
+            rejected_chores.append(chore)
+
+            logger.info(
+                "[worker %s] rejected chore: filter_id=%s person_id=%s "
+                "chore_id=%s name=%s estimated_minutes=%s used_minutes=%s available_minutes=%s",
+                actual_worker_name,
+                request.filter_id,
+                person.person_id,
+                chore.chore_id,
+                chore.name,
+                chore.estimated_minutes,
+                used_minutes,
+                available_minutes,
+            )
 
     time.sleep(WORKER_SLEEP_SECONDS)
 
-    result = result_pb2.JobResult(
-        batch_id=request.batch_id,
-        job_id=1,
-        worker=actual_worker_name,
-        result=(
-            f"selected_worker={selected_worker.worker_id}; "
-            f"processed_jobs={len(jobs_batch.jobs)}; "
-            f"outputs=[{', '.join(processed_outputs)}]"
-        ),
-        processing_seconds=WORKER_SLEEP_SECONDS,
+    result = chores_pb2.ChoreFilterResult(
+        filter_id=request.filter_id,
+        chores_id=request.chores.chores_id,
+        person=person,
+        used_minutes=used_minutes,
+        remaining_minutes=max(available_minutes - used_minutes, 0),
         context=request.context,
-        warnings=[],
     )
 
+    result.accepted_chores.extend(accepted_chores)
+    result.rejected_chores.extend(rejected_chores)
+
     return result
-
-
-def _payload_to_string(payload: job_pb2.WorkPayload) -> str:
-    which = payload.WhichOneof("kind")
-
-    if which == "text":
-        return payload.text
-
-    if which == "numeric_value":
-        return str(payload.numeric_value)
-
-    if which == "raw_bytes":
-        return "<bytes>"
-
-    return ""
 
 
 if __name__ == "__main__":

@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package demo.chores;
+
+import "common/common.proto";
+
+message Chore {
+  string chore_id = 1;
+  string name = 2;
+  uint32 estimated_minutes = 3;
+}
+
+message Chores {
+  string chores_id = 1;
+  repeated Chore chores = 2;
+  demo.common.RequestContext context = 3;
+}
+
+message PersonAvailability {
+  string cycle_id = 1;
+  string person_id = 2;
+  uint32 available_minutes = 3;
+  demo.common.RequestContext context = 4;
+}
+
+message ChoreFilterRequest {
+  string filter_id = 1;
+  Chores chores = 2;
+  PersonAvailability person = 3;
+  demo.common.RequestContext context = 4;
+}
+
+message ChoreFilterResult {
+  string filter_id = 1;
+  string chores_id = 2;
+  PersonAvailability person = 3;
+  repeated Chore accepted_chores = 4;
+  repeated Chore rejected_chores = 5;
+  uint32 used_minutes = 6;
+  uint32 remaining_minutes = 7;
+  demo.common.RequestContext context = 8;
+}
+
+message ChoreFilterSummary {
+  string chores_id = 1;
+  repeated ChoreFilterResult results = 2;
+  uint32 total_people_evaluated = 3;
+  uint32 total_chores_accepted = 4;
+  demo.common.RequestContext context = 5;
+}

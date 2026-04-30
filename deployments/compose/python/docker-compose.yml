@@ -27,7 +27,7 @@ services:
     volumes:
       - ./../../../out/python:/app/out
     env_file:
-     - .env
+     - ./../../../.env
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
@@ -42,7 +42,7 @@ services:
     volumes:
       - ./../../../out/python:/app/out
     env_file:
-     - .env
+     - ./../../../.env
     environment:
       - WORKER_NAME=worker-python-1
 
@@ -57,7 +57,7 @@ services:
     volumes:
       - ./../../../out/python:/app/out
     env_file:
-     - .env
+     - ./../../../.env
     environment:
       - WORKER_NAME=worker-python-2
 
@@ -72,7 +72,7 @@ services:
     volumes:
       - ./../../../out/python:/app/out
     env_file:
-     - .env
+     - ./../../../.env
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
@@ -87,6 +87,6 @@ services:
     volumes:
       - ./../../../out/python:/app/out
     env_file:
-     - .env
+     - ./../../../.env
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447

@@ -4,13 +4,13 @@ import os
 import zenoh
 
 
-ZENOH_ENDPOINT = os.getenv("ZENOH_ENDPOINT", "tcp/zenoh:7447")
+ZENOH_ENDPOINT = os.getenv("ZENOH_ENDPOINT", "")
 
-TOPIC_A_KEY = os.getenv("TOPIC_A_KEY", "demo/input/a")
-TOPIC_B_KEY = os.getenv("TOPIC_B_KEY", "demo/input/b")
+TOPIC_A_KEY = os.getenv("TOPIC_A_KEY", "")
+TOPIC_B_KEY = os.getenv("TOPIC_B_KEY", "")
 
-PRODUCER_TO_ORCHESTRATOR_KEY = "demo/producer/batch"
-ORCHESTRATOR_TO_CONSUMER_KEY = "demo/orchestrator/output"
+PRODUCER_TO_ORCHESTRATOR_KEY = os.getenv("PRODUCER_TO_ORCHESTRATOR_KEY", "")
+ORCHESTRATOR_TO_CONSUMER_KEY = os.getenv("ORCHESTRATOR_TO_CONSUMER_KEY", "")
 
 
 def open_zenoh_session():

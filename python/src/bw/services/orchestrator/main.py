@@ -23,7 +23,7 @@ from bw.messaging.zenoh import (
 )
 
 
-MATCH_WINDOW_SECONDS = float(os.getenv("MATCH_WINDOW_SECONDS", "0.5"))
+MATCH_WINDOW_SECONDS = float(os.getenv("MATCH_WINDOW_SECONDS", ""))
 
 
 @dataclass

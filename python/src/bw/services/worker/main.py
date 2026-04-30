@@ -16,7 +16,7 @@ from bw.messaging.rabbitmq import (
 
 
 def main() -> None:
-    worker_name = os.getenv("WORKER_NAME", get_hostname())
+    worker_name = os.getenv("WORKER_NAME", "")
     logger = init_logging(worker_name)
 
     connection = connect_with_retry(logger=logger)

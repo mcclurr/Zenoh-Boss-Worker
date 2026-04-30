@@ -6,9 +6,9 @@ import time
 import pika
 
 
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
-JOBS_QUEUE = "jobs"
-RESULTS_QUEUE = "results"
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "")
+JOBS_QUEUE = os.getenv("JOBS_QUEUE", "")
+RESULTS_QUEUE = os.getenv("RESULTS_QUEUE", "")
 
 
 def get_hostname() -> str:

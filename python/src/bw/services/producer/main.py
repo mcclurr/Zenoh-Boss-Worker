@@ -61,7 +61,7 @@ def main() -> None:
             )
 
             cycle_number += 1
-            time.sleep(10)
+            time.sleep(1)
 
 
 if __name__ == "__main__":

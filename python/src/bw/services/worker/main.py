@@ -37,7 +37,7 @@ def main() -> None:
                 f"batch_id={job.batch_id} job_id={job.job_id}"
             )
 
-            sleep_time = random.uniform(1.0, 3.0)
+            sleep_time = random.uniform(3.0, 5.0)
             time.sleep(sleep_time)
 
             payload_value = ""

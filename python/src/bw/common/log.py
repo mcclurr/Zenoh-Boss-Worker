@@ -1,7 +1,29 @@
 import logging
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = (
+            datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z")
+        )
+
+        payload = record.payload if hasattr(record, "payload") else {}
+
+        log_entry = {
+            "timestamp": timestamp,
+            "level": record.levelname,
+            "fields": {
+                "message": record.getMessage(),
+                "payload": payload,
+            },
+        }
+
+        return json.dumps(log_entry, ensure_ascii=False)
 
 def init_logging(prefix: str) -> logging.Logger:
     """
@@ -27,12 +49,9 @@ def init_logging(prefix: str) -> logging.Logger:
     if logger.handlers:
         return logger
 
-    formatter = logging.Formatter(
-        fmt="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    formatter = JsonFormatter()
 
-    file_handler = logging.FileHandler(filename)
+    file_handler = logging.FileHandler(filename, encoding="utf-8")
     file_handler.setFormatter(formatter)
 
     console_handler = logging.StreamHandler()
@@ -41,6 +60,6 @@ def init_logging(prefix: str) -> logging.Logger:
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
-    logger.info(f"Logging initialized → {filename}")
+    logger.info(f"Logging initialized -> {filename}")
 
     return logger

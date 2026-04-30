@@ -68,7 +68,7 @@ services:
     container_name: producer_python
     depends_on:
       - zenoh
-    command: ["python", "-u", "-m", "rbw.services.producer.main"]
+    command: ["python", "-u", "-m", "bw.services.producer.main"]
     volumes:
       - ./../../../out/rust:/app/out
     environment:
@@ -81,7 +81,7 @@ services:
     container_name: consumer_python
     depends_on:
       - zenoh
-    command: ["python", "-u", "-m", "rbw.services.consumer.main"]
+    command: ["python", "-u", "-m", "bw.services.consumer.main"]
     volumes:
       - ./../../../out/rust:/app/out
     environment:

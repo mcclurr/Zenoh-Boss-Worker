@@ -3,8 +3,8 @@ import time
 from common import common_pb2
 from example1 import batch_pb2, job_pb2
 
-from rbw.common.log import init_logging
-from rbw.messaging.zenoh import (
+from bw.common.log import init_logging
+from bw.messaging.zenoh import (
     PRODUCER_TO_ORCHESTRATOR_KEY,
     open_zenoh_session,
 )

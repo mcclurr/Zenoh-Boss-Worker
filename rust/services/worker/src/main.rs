@@ -3,7 +3,7 @@ use std::time::Duration;
 use futures_util::stream::StreamExt;
 use prost::Message;
 use rand::Rng;
-use rbw_core::{
+use bw_core::{
     config::{worker_name, DynError, JOBS_QUEUE, RESULTS_QUEUE},
     logging::init_logging,
     proto::demo::example1::{work_payload::Kind, Job, JobResult},

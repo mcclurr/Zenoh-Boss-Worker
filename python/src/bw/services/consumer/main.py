@@ -2,8 +2,8 @@ import time
 
 from example1 import batch_pb2
 
-from rbw.common.log import init_logging
-from rbw.messaging.zenoh import (
+from bw.common.log import init_logging
+from bw.messaging.zenoh import (
     ORCHESTRATOR_TO_CONSUMER_KEY,
     open_zenoh_session,
 )

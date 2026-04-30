@@ -2,15 +2,15 @@ import time
 
 from example1 import batch_pb2, job_pb2, result_pb2
 
-from rbw.common.log import init_logging
-from rbw.messaging.rabbitmq import (
+from bw.common.log import init_logging
+from bw.messaging.rabbitmq import (
     JOBS_QUEUE,
     RESULTS_QUEUE,
     connect_with_retry,
     declare_queues,
     publish_bytes,
 )
-from rbw.messaging.zenoh import (
+from bw.messaging.zenoh import (
     ORCHESTRATOR_TO_CONSUMER_KEY,
     PRODUCER_TO_ORCHESTRATOR_KEY,
     open_zenoh_session,

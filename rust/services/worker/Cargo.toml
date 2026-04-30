@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 
 [dependencies]
-rbw-core = { path = "../../rbw-core" }
+bw-core = { path = "../../bw-core" }
 
 tokio = { version = "1", features = ["full"] }
 prost = "0.13"

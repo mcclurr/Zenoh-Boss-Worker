@@ -25,4 +25,4 @@ RUN pip install --no-cache-dir .
 # Handwritten code under /app/src, generated proto modules under /app/generated
 ENV PYTHONPATH=/app/src:/app/generated
 
-CMD ["python", "-u", "-m", "rbw.services.orchestrator.main"]
+CMD ["python", "-u", "-m", "bw.services.orchestrator.main"]

@@ -4,8 +4,8 @@ import time
 
 from example1 import job_pb2, result_pb2
 
-from rbw.common.log import init_logging
-from rbw.messaging.rabbitmq import (
+from bw.common.log import init_logging
+from bw.messaging.rabbitmq import (
     JOBS_QUEUE,
     RESULTS_QUEUE,
     connect_with_retry,

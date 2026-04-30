@@ -13,7 +13,7 @@ RUN cargo install cargo-chef
 # Copy only the files needed to compute the dependency graph / recipe
 COPY rust/Cargo.toml /src/Cargo.toml
 COPY rust/Cargo.lock* /src/
-COPY rust/rbw-core /src/rbw-core
+COPY rust/bw-core /src/bw-core
 COPY rust/services /src/services
 COPY protos /protos
 
@@ -39,7 +39,7 @@ RUN cargo chef cook --release --recipe-path /src/recipe.json
 # Then copy the real source and build the binaries
 COPY rust/Cargo.toml /src/Cargo.toml
 COPY rust/Cargo.lock* /src/
-COPY rust/rbw-core /src/rbw-core
+COPY rust/bw-core /src/bw-core
 COPY rust/services /src/services
 COPY protos /protos
 

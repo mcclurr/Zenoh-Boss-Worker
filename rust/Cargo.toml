@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "rbw-core",
+  "bw-core",
   "services/orchestrator",
   "services/worker",
 ]

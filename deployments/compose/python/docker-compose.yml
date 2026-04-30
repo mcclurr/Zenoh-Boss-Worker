@@ -23,7 +23,7 @@ services:
     depends_on:
       - rabbitmq
       - zenoh
-    command: ["python", "-u", "-m", "rbw.services.orchestrator.main"]
+    command: ["python", "-u", "-m", "bw.services.orchestrator.main"]
     volumes:
       - ./../../../out/python:/app/out
     environment:
@@ -36,7 +36,7 @@ services:
     container_name: worker1
     depends_on:
       - rabbitmq
-    command: ["python", "-u", "-m", "rbw.services.worker.main"]
+    command: ["python", "-u", "-m", "bw.services.worker.main"]
     volumes:
       - ./../../../out/python:/app/out
     environment:
@@ -49,7 +49,7 @@ services:
     container_name: worker2
     depends_on:
       - rabbitmq
-    command: ["python", "-u", "-m", "rbw.services.worker.main"]
+    command: ["python", "-u", "-m", "bw.services.worker.main"]
     volumes:
       - ./../../../out/python:/app/out
     environment:
@@ -62,7 +62,7 @@ services:
     container_name: producer
     depends_on:
       - zenoh
-    command: ["python", "-u", "-m", "rbw.services.producer.main"]
+    command: ["python", "-u", "-m", "bw.services.producer.main"]
     volumes:
       - ./../../../out/python:/app/out
     environment:
@@ -75,7 +75,7 @@ services:
     container_name: consumer
     depends_on:
       - zenoh
-    command: ["python", "-u", "-m", "rbw.services.consumer.main"]
+    command: ["python", "-u", "-m", "bw.services.consumer.main"]
     volumes:
       - ./../../../out/python:/app/out
     environment:

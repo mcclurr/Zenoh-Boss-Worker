@@ -1,11 +1,13 @@
+import random
 import time
 
 from common import common_pb2
-from example1 import batch_pb2, job_pb2
+from example1 import input_pair_pb2
 
 from bw.common.log import init_logging
 from bw.messaging.zenoh import (
-    PRODUCER_TO_ORCHESTRATOR_KEY,
+    TOPIC_A_KEY,
+    TOPIC_B_KEY,
     open_zenoh_session,
 )
 
@@ -14,45 +16,51 @@ def main() -> None:
     logger = init_logging("producer")
 
     with open_zenoh_session() as session:
-        pub = session.declare_publisher(PRODUCER_TO_ORCHESTRATOR_KEY)
-        logger.info(f"[producer] publishing to {PRODUCER_TO_ORCHESTRATOR_KEY}")
+        topic_a_pub = session.declare_publisher(TOPIC_A_KEY)
+        topic_b_pub = session.declare_publisher(TOPIC_B_KEY)
 
-        batch_number = 1
+        logger.info(f"[producer] publishing topic A to {TOPIC_A_KEY}")
+        logger.info(f"[producer] publishing topic B to {TOPIC_B_KEY}")
+
+        cycle_number = 1
 
         while True:
+            cycle_id = f"cycle-{cycle_number:04d}"
+
             context = common_pb2.RequestContext(
-                request_id=f"req-{batch_number:04d}",
+                request_id=f"req-{cycle_number:04d}",
                 created_at_unix_ms=int(time.time() * 1000),
                 source="producer",
-                tags={"env": "demo", "transport": "zenoh"},
+                tags={"env": "demo", "transport": "zenoh", "mode": "two-topic"},
             )
 
-            jobs = []
-            for job_id in range(1, 6):
-                payload = job_pb2.WorkPayload(text=f"dummy-work-{job_id}")
-                job = job_pb2.Job(
-                    batch_id=f"batch-{batch_number:04d}",
-                    job_id=job_id,
-                    payload=payload,
-                    context=context,
-                    steps=["validate", "transform", "publish"],
-                )
-                jobs.append(job)
-
-            batch = batch_pb2.BatchRequest(
-                batch_id=f"batch-{batch_number:04d}",
-                total_jobs=len(jobs),
+            topic_a = input_pair_pb2.TopicAMessage(
+                cycle_id=cycle_id,
+                text=f"message-a-{cycle_number}",
                 context=context,
-                jobs=jobs,
             )
 
-            pub.put(batch.SerializeToString())
+            topic_b = input_pair_pb2.TopicBMessage(
+                cycle_id=cycle_id,
+                value=random.randint(100, 999),
+                context=context,
+            )
+
+            topic_a_pub.put(topic_a.SerializeToString())
             logger.info(
-                f"[producer] sent batch: batch_id={batch.batch_id} "
-                f"total_jobs={batch.total_jobs}"
+                f"[producer] sent topic A: cycle_id={topic_a.cycle_id} "
+                f"text={topic_a.text}"
             )
 
-            batch_number += 1
+            time.sleep(0.1)
+
+            topic_b_pub.put(topic_b.SerializeToString())
+            logger.info(
+                f"[producer] sent topic B: cycle_id={topic_b.cycle_id} "
+                f"value={topic_b.value}"
+            )
+
+            cycle_number += 1
             time.sleep(10)
 
 

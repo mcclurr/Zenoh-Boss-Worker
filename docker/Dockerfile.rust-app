@@ -1,42 +1,7 @@
-# -------- planner --------
-FROM rust:1.91-slim AS planner
+FROM bw-rust-base:latest AS builder
+
 WORKDIR /src
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    ca-certificates \
-    protobuf-compiler \
- && rm -rf /var/lib/apt/lists/*
-
-RUN cargo install cargo-chef
-
-# Copy only the files needed to compute the dependency graph / recipe
-COPY rust/Cargo.toml /src/Cargo.toml
-COPY rust/Cargo.lock* /src/
-COPY rust/bw-core /src/bw-core
-COPY rust/services /src/services
-COPY protos /protos
-
-RUN cargo chef prepare --recipe-path recipe.json
-
-
-# -------- builder --------
-FROM rust:1.91-slim AS builder
-WORKDIR /src
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    ca-certificates \
-    protobuf-compiler \
- && rm -rf /var/lib/apt/lists/*
-
-RUN cargo install cargo-chef
-
-# First build the dependency layer from the recipe
-COPY --from=planner /src/recipe.json /src/recipe.json
-RUN cargo chef cook --release --recipe-path /src/recipe.json
-
-# Then copy the real source and build the binaries
 COPY rust/Cargo.toml /src/Cargo.toml
 COPY rust/Cargo.lock* /src/
 COPY rust/bw-core /src/bw-core
@@ -46,13 +11,9 @@ COPY protos /protos
 RUN cargo build --release -p orchestrator -p worker
 
 
-# -------- runtime --------
 FROM debian:bookworm-slim
-WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
 COPY --from=builder /src/target/release/orchestrator /app/orchestrator
 COPY --from=builder /src/target/release/worker /app/worker

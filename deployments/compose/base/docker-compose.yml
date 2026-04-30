@@ -1,0 +1,12 @@
+services:
+  bw-rust-base:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.rust-base
+    image: bw-rust-base:latest
+
+  bw-python-base:
+    build:
+      context: ./../../..
+      dockerfile: docker/Dockerfile.python-base
+    image: bw-python-base:latest

@@ -18,7 +18,7 @@ services:
   orchestrator:
     build:
       context: ./../../..
-      dockerfile: docker/Dockerfile.python
+      dockerfile: docker/Dockerfile.python-app
     container_name: orchestrator
     depends_on:
       - rabbitmq
@@ -32,7 +32,7 @@ services:
   worker1:
     build:
       context: ./../../..
-      dockerfile: docker/Dockerfile.python
+      dockerfile: docker/Dockerfile.python-app
     container_name: worker1
     depends_on:
       - rabbitmq
@@ -45,7 +45,7 @@ services:
   worker2:
     build:
       context: ./../../..
-      dockerfile: docker/Dockerfile.python
+      dockerfile: docker/Dockerfile.python-app
     container_name: worker2
     depends_on:
       - rabbitmq
@@ -58,7 +58,7 @@ services:
   producer:
     build:
       context: ./../../..
-      dockerfile: docker/Dockerfile.python
+      dockerfile: docker/Dockerfile.python-app
     container_name: producer
     depends_on:
       - zenoh
@@ -71,7 +71,7 @@ services:
   consumer:
     build:
       context: ./../../..
-      dockerfile: docker/Dockerfile.python
+      dockerfile: docker/Dockerfile.python-app
     container_name: consumer
     depends_on:
       - zenoh

@@ -13,7 +13,7 @@ from bw.messaging.zenoh import (
 
 
 TOTAL_WORKERS = 10
-MAX_WORKER_MESSAGES_PER_BATCH = 4
+WORKER_MESSAGES_PER_BATCH = 2
 JOBS_PER_BATCH = 3
 
 
@@ -56,7 +56,7 @@ def main() -> None:
                 jobs_batch.total_jobs,
             )
 
-            worker_count = random.randint(0, MAX_WORKER_MESSAGES_PER_BATCH)
+            worker_count = WORKER_MESSAGES_PER_BATCH
             worker_ids = random.sample(
                 range(1, TOTAL_WORKERS + 1),
                 k=worker_count,
@@ -77,7 +77,7 @@ def main() -> None:
                     worker_msg.worker_id,
                 )
 
-                time.sleep(0.05)
+                time.sleep(0.01)
 
             cycle_number += 1
             time.sleep(1)

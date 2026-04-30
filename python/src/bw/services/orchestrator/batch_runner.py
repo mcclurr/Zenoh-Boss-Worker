@@ -1,172 +1,195 @@
+import os
+import queue
+import threading
 import time
 
-from example1 import batch_pb2, input_pair_pb2, job_pb2, result_pb2
+from example1 import batch_pb2, input_pair_pb2, result_pb2
 
 from bw.messaging.rabbitmq import (
     JOBS_QUEUE,
-    RESULTS_QUEUE,
+    connect_with_retry,
+    declare_queues,
     publish_bytes,
 )
+from bw.services.orchestrator.result_dispatcher import RabbitResultDispatcher
+
+
+RESULT_TIMEOUT_SECONDS = float(os.getenv("RESULT_TIMEOUT_SECONDS", "30"))
 
 
 class BatchRunner:
-    def __init__(self, rabbit_channel, consumer_pub, logger) -> None:
-        self.rabbit_channel = rabbit_channel
+    def __init__(
+        self,
+        result_dispatcher: RabbitResultDispatcher,
+        consumer_pub,
+        logger,
+    ) -> None:
+        self.result_dispatcher = result_dispatcher
         self.consumer_pub = consumer_pub
         self.logger = logger
+        self.consumer_pub_lock = threading.Lock()
 
     def run_worker_batch(
         self,
         jobs_batch: batch_pb2.BatchRequest,
         worker_msg: input_pair_pb2.WorkerMessage,
     ) -> None:
-        """
-        Run one selected worker against the latest jobs batch.
-
-        For now, this publishes all jobs from the latest BatchRequest to
-        RabbitMQ, waits for all matching results, then publishes a BatchSummary.
-        """
         batch_id = f"{jobs_batch.batch_id}-{worker_msg.worker_id}"
 
         self.logger.info(
             "[orchestrator] running worker batch: "
-            "source_batch_id=%s run_batch_id=%s worker_id=%s total_jobs=%s",
+            "source_batch_id=%s run_batch_id=%s selected_worker_id=%s total_jobs=%s",
             jobs_batch.batch_id,
             batch_id,
             worker_msg.worker_id,
             jobs_batch.total_jobs,
         )
 
-        jobs_to_publish = []
+        result_queue = self.result_dispatcher.register_batch(batch_id)
 
-        for original_job in jobs_batch.jobs:
-            job = job_pb2.Job()
-            job.CopyFrom(original_job)
+        try:
+            worker_batch_request = self._build_worker_batch_request(
+                batch_id=batch_id,
+                jobs_batch=jobs_batch,
+                worker_msg=worker_msg,
+            )
 
-            job.batch_id = batch_id
-            job.context.CopyFrom(jobs_batch.context)
-            job.steps.append(f"selected-worker:{worker_msg.worker_id}")
+            self._publish_worker_batch_request(worker_batch_request)
 
-            jobs_to_publish.append(job)
+            results = self._wait_for_results(
+                batch_id=batch_id,
+                expected_result_count=1,
+                result_queue=result_queue,
+            )
 
-        for job in jobs_to_publish:
-            self._publish_job(job)
+            summary = self._build_summary(
+                batch_id=batch_id,
+                total_jobs=jobs_batch.total_jobs,
+                context=jobs_batch.context,
+                results=results,
+            )
 
-        results = self._wait_for_results(
-            batch_id=batch_id,
-            expected_job_count=len(jobs_to_publish),
-        )
+            self._publish_summary(summary)
 
-        summary = self._build_summary(
+        finally:
+            self.result_dispatcher.unregister_batch(batch_id)
+
+    def _build_worker_batch_request(
+        self,
+        batch_id: str,
+        jobs_batch: batch_pb2.BatchRequest,
+        worker_msg: input_pair_pb2.WorkerMessage,
+    ) -> batch_pb2.WorkerBatchRequest:
+        request = batch_pb2.WorkerBatchRequest(
             batch_id=batch_id,
             context=jobs_batch.context,
-            results=results,
         )
 
-        self._publish_summary(summary)
+        request.jobs_batch.CopyFrom(jobs_batch)
+        request.worker.CopyFrom(worker_msg)
 
-    def _publish_job(self, job: job_pb2.Job) -> None:
-        publish_bytes(
-            self.rabbit_channel,
-            JOBS_QUEUE,
-            job.SerializeToString(),
-        )
+        return request
 
-        self.logger.info(
-            "[orchestrator] queued job: batch_id=%s job_id=%s",
-            job.batch_id,
-            job.job_id,
-        )
+    def _publish_worker_batch_request(
+        self,
+        request: batch_pb2.WorkerBatchRequest,
+    ) -> None:
+        connection = connect_with_retry(logger=self.logger)
+
+        try:
+            channel = connection.channel()
+            declare_queues(channel)
+
+            publish_bytes(
+                channel,
+                JOBS_QUEUE,
+                request.SerializeToString(),
+            )
+
+            self.logger.info(
+                "[orchestrator] queued worker batch request: "
+                "batch_id=%s source_batch_id=%s selected_worker_id=%s jobs=%s",
+                request.batch_id,
+                request.jobs_batch.batch_id,
+                request.worker.worker_id,
+                len(request.jobs_batch.jobs),
+            )
+
+        finally:
+            try:
+                connection.close()
+            except Exception:
+                self.logger.exception(
+                    "[orchestrator] failed to close RabbitMQ publish connection"
+                )
 
     def _wait_for_results(
         self,
         batch_id: str,
-        expected_job_count: int,
+        expected_result_count: int,
+        result_queue: queue.Queue[result_pb2.JobResult],
     ) -> list[result_pb2.JobResult]:
         self.logger.info(
-            "[orchestrator] waiting for results: batch_id=%s expected=%s",
+            "[orchestrator] waiting for worker-batch results: "
+            "batch_id=%s expected=%s",
             batch_id,
-            expected_job_count,
+            expected_result_count,
         )
 
+        deadline = time.monotonic() + RESULT_TIMEOUT_SECONDS
         results: list[result_pb2.JobResult] = []
-        seen_job_ids: set[int] = set()
+        seen_result_ids: set[int] = set()
 
-        while len(results) < expected_job_count:
-            method_frame, header_frame, body = self.rabbit_channel.basic_get(
-                queue=RESULTS_QUEUE,
-                auto_ack=False,
-            )
+        while len(results) < expected_result_count:
+            remaining = deadline - time.monotonic()
 
-            if method_frame is None:
-                time.sleep(0.25)
-                continue
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Timed out waiting for worker-batch result: "
+                    f"batch_id={batch_id} received={len(results)} "
+                    f"expected={expected_result_count}"
+                )
 
             try:
-                result = result_pb2.JobResult()
-                result.ParseFromString(body)
+                result = result_queue.get(timeout=min(remaining, 0.25))
+            except queue.Empty:
+                continue
 
-                if result.batch_id != batch_id:
-                    self.logger.warning(
-                        "[orchestrator] ignoring stale/non-matching result: "
-                        "batch_id=%s job_id=%s expected_batch_id=%s",
-                        result.batch_id,
-                        result.job_id,
-                        batch_id,
-                    )
-                    self.rabbit_channel.basic_ack(
-                        delivery_tag=method_frame.delivery_tag
-                    )
-                    continue
-
-                if result.job_id in seen_job_ids:
-                    self.logger.warning(
-                        "[orchestrator] ignoring duplicate result: "
-                        "batch_id=%s job_id=%s",
-                        result.batch_id,
-                        result.job_id,
-                    )
-                    self.rabbit_channel.basic_ack(
-                        delivery_tag=method_frame.delivery_tag
-                    )
-                    continue
-
-                seen_job_ids.add(result.job_id)
-                results.append(result)
-
-                self.rabbit_channel.basic_ack(
-                    delivery_tag=method_frame.delivery_tag
-                )
-
-                self.logger.info(
-                    "[orchestrator] received result %s/%s: "
-                    "batch_id=%s job_id=%s worker=%s result=%s",
-                    len(results),
-                    expected_job_count,
+            if result.job_id in seen_result_ids:
+                self.logger.warning(
+                    "[orchestrator] ignoring duplicate worker-batch result: "
+                    "batch_id=%s result_id=%s",
                     result.batch_id,
                     result.job_id,
-                    result.worker,
-                    result.result,
                 )
+                continue
 
-            except Exception:
-                self.logger.exception("[orchestrator] error processing result")
-                self.rabbit_channel.basic_nack(
-                    delivery_tag=method_frame.delivery_tag,
-                    requeue=True,
-                )
+            seen_result_ids.add(result.job_id)
+            results.append(result)
+
+            self.logger.info(
+                "[orchestrator] received worker-batch result %s/%s: "
+                "batch_id=%s result_id=%s actual_worker=%s result=%s",
+                len(results),
+                expected_result_count,
+                result.batch_id,
+                result.job_id,
+                result.worker,
+                result.result,
+            )
 
         return results
 
     def _build_summary(
         self,
         batch_id: str,
+        total_jobs: int,
         context,
         results: list[result_pb2.JobResult],
     ) -> batch_pb2.BatchSummary:
         summary = batch_pb2.BatchSummary(
             batch_id=batch_id,
-            total_jobs=len(results),
+            total_jobs=total_jobs,
             results_received=len(results),
             context=context,
         )
@@ -175,7 +198,8 @@ class BatchRunner:
         return summary
 
     def _publish_summary(self, summary: batch_pb2.BatchSummary) -> None:
-        self.consumer_pub.put(summary.SerializeToString())
+        with self.consumer_pub_lock:
+            self.consumer_pub.put(summary.SerializeToString())
 
         self.logger.info(
             "[orchestrator] published batch summary to zenoh: "

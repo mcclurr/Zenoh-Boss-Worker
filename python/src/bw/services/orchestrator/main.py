@@ -2,10 +2,6 @@ import os
 import time
 
 from bw.common.log import init_logging
-from bw.messaging.rabbitmq import (
-    connect_with_retry,
-    declare_queues,
-)
 from bw.messaging.zenoh import (
     ORCHESTRATOR_TO_CONSUMER_KEY,
     JOBS_BATCH_KEY,
@@ -14,19 +10,19 @@ from bw.messaging.zenoh import (
 )
 from bw.services.orchestrator.batch_runner import BatchRunner
 from bw.services.orchestrator.coordinator import BatchCoordinator
+from bw.services.orchestrator.result_dispatcher import RabbitResultDispatcher
 
 
-MATCH_WINDOW_SECONDS = float(os.getenv("MATCH_WINDOW_SECONDS", ""))
+MATCH_WINDOW_SECONDS = float(os.getenv("MATCH_WINDOW_SECONDS", "0.5"))
 
 
 def main() -> None:
     logger = init_logging("orchestrator-python")
 
-    rabbit_connection = connect_with_retry(logger=logger)
-    rabbit_channel = rabbit_connection.channel()
-    declare_queues(rabbit_channel)
+    result_dispatcher = RabbitResultDispatcher(logger=logger)
+    result_dispatcher.start()
 
-    logger.info("[orchestrator] connected to RabbitMQ")
+    logger.info("[orchestrator] started RabbitMQ result dispatcher")
 
     with open_zenoh_session() as zenoh_session:
         logger.info("[orchestrator] connected to Zenoh")
@@ -34,7 +30,7 @@ def main() -> None:
         consumer_pub = zenoh_session.declare_publisher(ORCHESTRATOR_TO_CONSUMER_KEY)
 
         batch_runner = BatchRunner(
-            rabbit_channel=rabbit_channel,
+            result_dispatcher=result_dispatcher,
             consumer_pub=consumer_pub,
             logger=logger,
         )
@@ -49,7 +45,7 @@ def main() -> None:
         zenoh_session.declare_subscriber(WORKER_STATUS_KEY, coordinator.on_topic_b)
 
         logger.info(
-            "[orchestrator] subscribed to topic_a=%s topic_b=%s "
+            "[orchestrator] subscribed to jobs_key=%s worker_key=%s "
             "match_window=%.3fs",
             JOBS_BATCH_KEY,
             WORKER_STATUS_KEY,

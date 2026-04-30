@@ -5,6 +5,7 @@ package demo.example1;
 import "common/common.proto";
 import "example1/job.proto";
 import "example1/result.proto";
+import "example1/input_pair.proto";
 
 message BatchRequest {
   string batch_id = 1;
@@ -19,4 +20,11 @@ message BatchSummary {
   uint32 results_received = 3;
   repeated JobResult results = 4;
   demo.common.RequestContext context = 5;
+}
+
+message WorkerBatchRequest {
+  string batch_id = 1;
+  BatchRequest jobs_batch = 2;
+  WorkerMessage worker = 3;
+  demo.common.RequestContext context = 4;
 }

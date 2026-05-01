@@ -1,11 +1,4 @@
 services:
-  rabbitmq:
-    image: rabbitmq:3-management
-    hostname: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-
   zenoh:
     image: eclipse/zenoh
     hostname: zenoh
@@ -21,7 +14,6 @@ services:
       dockerfile: docker/Dockerfile.python-app
     container_name: orchestrator
     depends_on:
-      - rabbitmq
       - zenoh
     command: ["python", "-u", "-m", "bw.services.orchestrator.main"]
     volumes:
@@ -36,8 +28,6 @@ services:
       context: ./../../..
       dockerfile: docker/Dockerfile.python-app
     container_name: worker1
-    depends_on:
-      - rabbitmq
     command: ["python", "-u", "-m", "bw.services.worker.main"]
     volumes:
       - ./../../../out/python:/app/out
@@ -51,8 +41,6 @@ services:
       context: ./../../..
       dockerfile: docker/Dockerfile.python-app
     container_name: worker2
-    depends_on:
-      - rabbitmq
     command: ["python", "-u", "-m", "bw.services.worker.main"]
     volumes:
       - ./../../../out/python:/app/out

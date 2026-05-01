@@ -13,7 +13,6 @@ from bw.services.orchestrator.coordinator import BatchCoordinator
 from bw.services.orchestrator.result_dispatcher import ZenohResultDispatcher
 
 
-MATCH_WINDOW_SECONDS = float(os.getenv("MATCH_WINDOW_SECONDS", ""))
 
 ZENOH_WORKER_IDS = [
     worker_id.strip()
@@ -54,8 +53,7 @@ def main() -> None:
 
         coordinator = BatchCoordinator(
             batch_runner=batch_runner,
-            logger=logger,
-            match_window_seconds=MATCH_WINDOW_SECONDS,
+            logger=logger
         )
 
         zenoh_session.declare_subscriber(JOBS_BATCH_KEY, coordinator.on_topic_a)

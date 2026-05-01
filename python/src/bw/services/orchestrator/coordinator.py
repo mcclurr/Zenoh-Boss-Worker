@@ -39,12 +39,10 @@ class BatchCoordinator:
     def __init__(
         self,
         batch_runner: BatchRunner,
-        logger,
-        match_window_seconds: float,
+        logger
     ) -> None:
         self.batch_runner = batch_runner
         self.logger = logger
-        self.match_window_seconds = match_window_seconds
 
         self.lock = threading.Lock()
         self.current_window: ChoresWindow | None = None

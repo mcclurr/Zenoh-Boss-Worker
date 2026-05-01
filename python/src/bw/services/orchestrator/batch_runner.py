@@ -5,29 +5,43 @@ import time
 
 from chores import chores_pb2
 
-from bw.messaging.rabbitmq import (
-    JOBS_QUEUE,
-    connect_with_retry,
-    declare_queues,
-    publish_bytes,
-)
-from bw.services.orchestrator.result_dispatcher import RabbitResultDispatcher
+from bw.messaging.zenoh import worker_request_key
+from bw.services.orchestrator.result_dispatcher import ZenohResultDispatcher
 
 
-RESULT_TIMEOUT_SECONDS = float(os.getenv("RESULT_TIMEOUT_SECONDS", ""))
+RESULT_TIMEOUT_SECONDS = float(os.getenv("RESULT_TIMEOUT_SECONDS", "30"))
 
 
 class BatchRunner:
     def __init__(
         self,
-        result_dispatcher: RabbitResultDispatcher,
+        zenoh_session,
+        result_dispatcher: ZenohResultDispatcher,
         consumer_pub,
         logger,
+        worker_instance_ids: list[str],
+        max_inflight_per_worker: int,
     ) -> None:
+        self.zenoh_session = zenoh_session
         self.result_dispatcher = result_dispatcher
         self.consumer_pub = consumer_pub
         self.logger = logger
+        self.worker_instance_ids = worker_instance_ids
+        self.max_inflight_per_worker = max_inflight_per_worker
+
         self.consumer_pub_lock = threading.Lock()
+        self.worker_lock = threading.Lock()
+
+        self.worker_inflight: dict[str, int] = {
+            worker_id: 0 for worker_id in worker_instance_ids
+        }
+
+        self.worker_publishers = {
+            worker_id: self.zenoh_session.declare_publisher(
+                worker_request_key(worker_id)
+            )
+            for worker_id in worker_instance_ids
+        }
 
     def run_chore_filter(
         self,
@@ -36,17 +50,21 @@ class BatchRunner:
     ) -> None:
         filter_id = f"{chores.chores_id}-{person.person_id}"
 
+        worker_instance_id = self._reserve_worker_instance(filter_id)
+
         self.logger.info(
             "[orchestrator] running chore filter: "
-            "chores_id=%s filter_id=%s person_id=%s chores=%s available_minutes=%s",
+            "chores_id=%s filter_id=%s person_id=%s chores=%s "
+            "available_minutes=%s worker_instance_id=%s",
             chores.chores_id,
             filter_id,
             person.person_id,
             len(chores.chores),
             person.available_minutes,
+            worker_instance_id,
         )
 
-        result_queue = self.result_dispatcher.register_batch(filter_id)
+        result_queue = self.result_dispatcher.register_filter(filter_id)
 
         try:
             request = self._build_chore_filter_request(
@@ -55,7 +73,10 @@ class BatchRunner:
                 person=person,
             )
 
-            self._publish_chore_filter_request(request)
+            self._publish_chore_filter_request(
+                worker_instance_id=worker_instance_id,
+                request=request,
+            )
 
             results = self._wait_for_results(
                 filter_id=filter_id,
@@ -72,7 +93,58 @@ class BatchRunner:
             self._publish_summary(summary)
 
         finally:
-            self.result_dispatcher.unregister_batch(filter_id)
+            self.result_dispatcher.unregister_filter(filter_id)
+            self._release_worker_instance(worker_instance_id)
+
+    def _reserve_worker_instance(self, filter_id: str) -> str:
+        with self.worker_lock:
+            available_workers = [
+                worker_id
+                for worker_id, inflight in self.worker_inflight.items()
+                if inflight < self.max_inflight_per_worker
+            ]
+
+            if not available_workers:
+                raise RuntimeError(
+                    f"No Zenoh worker instance capacity available for filter_id={filter_id}"
+                )
+
+            selected_worker = min(
+                available_workers,
+                key=lambda worker_id: self.worker_inflight[worker_id],
+            )
+
+            self.worker_inflight[selected_worker] += 1
+
+            self.logger.info(
+                "[orchestrator] reserved worker instance: "
+                "filter_id=%s worker_instance_id=%s inflight=%s max_inflight=%s",
+                filter_id,
+                selected_worker,
+                self.worker_inflight[selected_worker],
+                self.max_inflight_per_worker,
+            )
+
+            return selected_worker
+
+    def _release_worker_instance(self, worker_instance_id: str) -> None:
+        with self.worker_lock:
+            self.worker_inflight[worker_instance_id] -= 1
+
+            if self.worker_inflight[worker_instance_id] < 0:
+                self.logger.warning(
+                    "[orchestrator] worker inflight count went negative: "
+                    "worker_instance_id=%s",
+                    worker_instance_id,
+                )
+                self.worker_inflight[worker_instance_id] = 0
+
+            self.logger.info(
+                "[orchestrator] released worker instance: "
+                "worker_instance_id=%s inflight=%s",
+                worker_instance_id,
+                self.worker_inflight[worker_instance_id],
+            )
 
     def _build_chore_filter_request(
         self,
@@ -92,37 +164,26 @@ class BatchRunner:
 
     def _publish_chore_filter_request(
         self,
+        worker_instance_id: str,
         request: chores_pb2.ChoreFilterRequest,
     ) -> None:
-        connection = connect_with_retry(logger=self.logger)
+        publisher = self.worker_publishers[worker_instance_id]
+        key = worker_request_key(worker_instance_id)
 
-        try:
-            channel = connection.channel()
-            declare_queues(channel)
+        publisher.put(request.SerializeToString())
 
-            publish_bytes(
-                channel,
-                JOBS_QUEUE,
-                request.SerializeToString(),
-            )
-
-            self.logger.info(
-                "[orchestrator] queued chore filter request: "
-                "filter_id=%s chores_id=%s person_id=%s chores=%s available_minutes=%s",
-                request.filter_id,
-                request.chores.chores_id,
-                request.person.person_id,
-                len(request.chores.chores),
-                request.person.available_minutes,
-            )
-
-        finally:
-            try:
-                connection.close()
-            except Exception:
-                self.logger.exception(
-                    "[orchestrator] failed to close RabbitMQ publish connection"
-                )
+        self.logger.info(
+            "[orchestrator] published chore filter request to zenoh worker: "
+            "key=%s worker_instance_id=%s filter_id=%s chores_id=%s "
+            "person_id=%s chores=%s available_minutes=%s",
+            key,
+            worker_instance_id,
+            request.filter_id,
+            request.chores.chores_id,
+            request.person.person_id,
+            len(request.chores.chores),
+            request.person.available_minutes,
+        )
 
     def _wait_for_results(
         self,

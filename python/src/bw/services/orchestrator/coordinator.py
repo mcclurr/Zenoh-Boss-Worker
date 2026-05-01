@@ -14,8 +14,8 @@ PERSON_GATHER_WINDOW_SECONDS = float(
 
 MAX_ACTIVE_FILTERS = int(os.getenv("MAX_ACTIVE_FILTERS", ""))
 
-PERSON_LAST_SELECTED_TTL_SECONDS = float(
-    os.getenv("PERSON_LAST_SELECTED_TTL_SECONDS", "")
+PERSON_LAST_SUCCESS_TTL_SECONDS = float(
+    os.getenv("PERSON_LAST_SUCCESS_TTL_SECONDS", "")
 )
 
 
@@ -267,7 +267,7 @@ class BatchCoordinator:
         stale_person_ids = [
             person_id
             for person_id, last_selected in self.person_last_selected.items()
-            if now - last_selected > PERSON_LAST_SELECTED_TTL_SECONDS
+            if now - last_selected > PERSON_LAST_SUCCESS_TTL_SECONDS
         ]
 
         for person_id in stale_person_ids:

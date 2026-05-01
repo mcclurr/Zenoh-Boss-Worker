@@ -4,13 +4,10 @@ import time
 from chores import chores_pb2
 
 from bw.common.log import init_logging
-from bw.messaging.rabbitmq import (
-    JOBS_QUEUE,
-    RESULTS_QUEUE,
-    connect_with_retry,
-    declare_queues,
-    get_hostname,
-    publish_bytes,
+from bw.messaging.zenoh import (
+    CHORE_FILTER_RESULT_KEY,
+    open_zenoh_session,
+    worker_request_key,
 )
 
 
@@ -18,66 +15,69 @@ WORKER_SLEEP_SECONDS = float(os.getenv("WORKER_SLEEP_SECONDS", ""))
 
 
 def main() -> None:
-    worker_name = os.getenv("WORKER_NAME", get_hostname())
+    worker_name = os.getenv("WORKER_NAME", "")
+
     logger = init_logging(worker_name)
 
-    connection = connect_with_retry(logger=logger)
-    channel = connection.channel()
-    declare_queues(channel)
+    request_key = worker_request_key(worker_name)
 
-    channel.basic_qos(prefetch_count=1)
+    with open_zenoh_session() as session:
+        result_pub = session.declare_publisher(CHORE_FILTER_RESULT_KEY)
 
-    logger.info("[worker %s] connected and waiting for chore filter requests", worker_name)
+        logger.info(
+            "[worker %s] subscribed to chore filter requests: "
+            "worker_name=%s request_key=%s result_key=%s",
+            worker_name,
+            worker_name,
+            request_key,
+            CHORE_FILTER_RESULT_KEY,
+        )
 
-    def callback(ch, method, properties, body):
-        try:
-            request = chores_pb2.ChoreFilterRequest()
-            request.ParseFromString(body)
+        def on_request(sample) -> None:
+            try:
+                request = chores_pb2.ChoreFilterRequest()
+                request.ParseFromString(sample.payload.to_bytes())
 
-            logger.info(
-                "[worker %s] got chore filter request: "
-                "filter_id=%s chores_id=%s person_id=%s chores=%s available_minutes=%s",
-                worker_name,
-                request.filter_id,
-                request.chores.chores_id,
-                request.person.person_id,
-                len(request.chores.chores),
-                request.person.available_minutes,
-            )
+                logger.info(
+                    "[worker %s] got chore filter request: "
+                    "filter_id=%s chores_id=%s person_id=%s chores=%s "
+                    "available_minutes=%s",
+                    worker_name,
+                    request.filter_id,
+                    request.chores.chores_id,
+                    request.person.person_id,
+                    len(request.chores.chores),
+                    request.person.available_minutes,
+                )
 
-            result = process_chore_filter_request(
-                request=request,
-                actual_worker_name=worker_name,
-                logger=logger,
-            )
+                result = process_chore_filter_request(
+                    request=request,
+                    actual_worker_name=worker_name,
+                    logger=logger,
+                )
 
-            publish_bytes(ch, RESULTS_QUEUE, result.SerializeToString())
+                result_pub.put(result.SerializeToString())
 
-            logger.info(
-                "[worker %s] sent chore filter result: "
-                "filter_id=%s person_id=%s accepted=%s rejected=%s used_minutes=%s remaining_minutes=%s",
-                worker_name,
-                result.filter_id,
-                result.person.person_id,
-                len(result.accepted_chores),
-                len(result.rejected_chores),
-                result.used_minutes,
-                result.remaining_minutes,
-            )
+                logger.info(
+                    "[worker %s] sent chore filter result: "
+                    "filter_id=%s person_id=%s accepted=%s rejected=%s "
+                    "used_minutes=%s remaining_minutes=%s",
+                    worker_name,
+                    result.filter_id,
+                    result.person.person_id,
+                    len(result.accepted_chores),
+                    len(result.rejected_chores),
+                    result.used_minutes,
+                    result.remaining_minutes,
+                )
 
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            except Exception as exc:
+                logger.exception("[worker %s] error: %s", worker_name, exc)
 
-        except Exception as exc:
-            logger.exception("[worker %s] error: %s", worker_name, exc)
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        session.declare_subscriber(request_key, on_request)
 
-    channel.basic_consume(
-        queue=JOBS_QUEUE,
-        on_message_callback=callback,
-        auto_ack=False,
-    )
-
-    channel.start_consuming()
+        while True:
+            time.sleep(1)
 
 
 def process_chore_filter_request(
@@ -114,7 +114,8 @@ def process_chore_filter_request(
 
             logger.info(
                 "[worker %s] rejected chore: filter_id=%s person_id=%s "
-                "chore_id=%s name=%s estimated_minutes=%s used_minutes=%s available_minutes=%s",
+                "chore_id=%s name=%s estimated_minutes=%s used_minutes=%s "
+                "available_minutes=%s",
                 actual_worker_name,
                 request.filter_id,
                 person.person_id,

@@ -8,6 +8,23 @@ services:
     environment:
       - RUST_LOG=info
 
+  assignment-publisher:
+    build:
+      context: ./../../../../..
+      dockerfile: docker/Dockerfile.python-app
+    container_name: assignment_publisher
+    depends_on:
+      - zenoh
+    command: ["python", "-u", "-m", "bw.services.assignment.publisher"]
+    volumes:
+      - ./../../../../../out/python:/app/out
+    env_file:
+     - ./../../../../../.env
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+      - ASSIGNMENT_REQUEST_KEY=demo/assignment/request
+      - ASSIGNMENT_RESULT_KEY=demo/assignment/result
+
   assignment-service:
     build:
       context: ./../../../../..

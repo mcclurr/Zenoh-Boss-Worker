@@ -15,6 +15,62 @@ RESULT_KEY = os.getenv("ASSIGNMENT_RESULT_KEY", "demo/assignment/result")
 RESULT_TIMEOUT_SECONDS = float(os.getenv("RESULT_TIMEOUT_SECONDS", "10"))
 PUBLISH_INTERVAL_SECONDS = float(os.getenv("PUBLISH_INTERVAL_SECONDS", "3"))
 
+def request_to_payload(request: assignment_pb2.AssignmentRequest) -> dict:
+    worker_ids = [w.worker_id for w in request.workers]
+    job_ids = [j.job_id for j in request.jobs]
+
+    costs = {
+        (c.worker_id, c.job_id): c.cost
+        for c in request.costs
+    }
+
+    matrix = [
+        {
+            "worker_id": worker_id,
+            "costs": {
+                job_id: costs.get((worker_id, job_id))
+                for job_id in job_ids
+            },
+        }
+        for worker_id in worker_ids
+    ]
+
+    return {
+        "assignment_id": request.assignment_id,
+        "workers": worker_ids,
+        "jobs": job_ids,
+        "cost_matrix": matrix,
+    }
+
+
+def result_to_payload(result: assignment_pb2.AssignmentResult) -> dict:
+    return {
+        "assignment_id": result.assignment_id,
+        "total_cost": result.total_cost,
+        "assignments": [
+            {
+                "worker_id": a.worker_id,
+                "job_id": a.job_id,
+                "cost": a.cost,
+            }
+            for a in result.assignments
+        ],
+    }
+
+
+def log_request(logger, request: assignment_pb2.AssignmentRequest) -> None:
+    logger.info(
+        "[publisher] assignment request scenario",
+        extra={"payload": request_to_payload(request)},
+    )
+
+
+def log_result(logger, result: assignment_pb2.AssignmentResult) -> None:
+    logger.info(
+        "[publisher] assignment result",
+        extra={"payload": result_to_payload(result)},
+    )
+
 
 def build_request() -> assignment_pb2.AssignmentRequest:
     assignment_id = f"assignment-{uuid.uuid4()}"
@@ -104,13 +160,19 @@ def main():
         while True:
             request = build_request()
 
+            log_request(logger, request)
+
             request_pub.put(request.SerializeToString())
 
             logger.info(
-                "[publisher] sent assignment request: assignment_id=%s workers=%s jobs=%s",
-                request.assignment_id,
-                len(request.workers),
-                len(request.jobs),
+                "[publisher] sent assignment request",
+                extra={
+                    "payload": {
+                        "assignment_id": request.assignment_id,
+                        "workers": len(request.workers),
+                        "jobs": len(request.jobs),
+                    }
+                },
             )
 
             while True:

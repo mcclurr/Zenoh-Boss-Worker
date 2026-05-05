@@ -3,5 +3,6 @@ members = [
   "bw-core",
   "services/orchestrator",
   "services/worker",
+  "services/assignment",
 ]
 resolver = "2"

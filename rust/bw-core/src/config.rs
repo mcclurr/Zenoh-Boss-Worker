@@ -8,6 +8,16 @@ pub const RESULTS_QUEUE: &str = "results";
 pub const PRODUCER_TO_ORCHESTRATOR_KEY: &str = "demo/producer/batch";
 pub const ORCHESTRATOR_TO_CONSUMER_KEY: &str = "demo/orchestrator/output";
 
+pub fn assignment_request_key() -> String {
+    env::var("ASSIGNMENT_REQUEST_KEY")
+        .unwrap_or_else(|_| "demo/assignment/request".to_string())
+}
+
+pub fn assignment_result_key() -> String {
+    env::var("ASSIGNMENT_RESULT_KEY")
+        .unwrap_or_else(|_| "demo/assignment/result".to_string())
+}
+
 pub fn rabbitmq_host() -> String {
     env::var("RABBITMQ_HOST").unwrap_or_else(|_| "rabbitmq".to_string())
 }

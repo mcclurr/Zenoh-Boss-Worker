@@ -7,6 +7,7 @@ fn main() {
             &[
                 "../../proto/common/common.proto",
                 "../../proto/common/metadata.proto",
+                "../../proto/assignment/assignment.proto",
                 "../../proto/example1/job.proto",
                 "../../proto/example1/input_pair.proto",
                 "../../proto/example1/result.proto",

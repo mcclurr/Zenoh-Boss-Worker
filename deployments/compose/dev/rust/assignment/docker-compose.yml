@@ -1,0 +1,46 @@
+services:
+  zenoh:
+    image: eclipse/zenoh
+    hostname: zenoh
+    ports:
+      - "7447:7447"
+      - "8000:8000"
+    environment:
+      - RUST_LOG=info
+
+  assignment-publisher:
+    build:
+      context: ./../../../../..
+      dockerfile: docker/Dockerfile.python-app
+    container_name: assignment_publisher
+    depends_on:
+      - zenoh
+    command: ["python", "-u", "-m", "bw.services.assignment.publisher"]
+    volumes:
+      - ./../../../../../out/rust:/app/out
+    env_file:
+     - ./../../../../../.env
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+      - ASSIGNMENT_REQUEST_KEY=demo/assignment/request
+      - ASSIGNMENT_RESULT_KEY=demo/assignment/result
+      - RESULT_TIMEOUT_SECONDS=30
+      - PUBLISH_INTERVAL_SECONDS=3
+
+  assignment-service-rust:
+    build:
+      context: ./../../../../..
+      dockerfile: docker/Dockerfile.rust-app
+    container_name: assignment_service_rust
+    depends_on:
+      - zenoh
+    command: ["/app/assignment"]
+    volumes:
+      - ./../../../../../out/rust:/app/out
+    env_file:
+     - ./../../../../../.env
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+      - ASSIGNMENT_REQUEST_KEY=demo/assignment/request
+      - ASSIGNMENT_RESULT_KEY=demo/assignment/result
+      - RUST_LOG=info

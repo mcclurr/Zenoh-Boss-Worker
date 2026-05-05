@@ -8,7 +8,7 @@ COPY rust/bw-core /src/bw-core
 COPY rust/services /src/services
 COPY proto /proto
 
-RUN cargo build --release -p orchestrator -p worker
+RUN cargo build --release -p orchestrator -p worker -p assignment
 
 
 FROM debian:bookworm-slim
@@ -17,6 +17,7 @@ WORKDIR /app
 
 COPY --from=builder /src/target/release/orchestrator /app/orchestrator
 COPY --from=builder /src/target/release/worker /app/worker
+COPY --from=builder /src/target/release/assignment /app/assignment
 
 RUN mkdir -p /app/out
 

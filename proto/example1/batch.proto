@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package demo.example1;
+
+import "common/common.proto";
+import "example1/job.proto";
+import "example1/result.proto";
+
+message BatchRequest {
+  string batch_id = 1;
+  uint32 total_jobs = 2;
+  demo.common.RequestContext context = 3;
+  repeated Job jobs = 4;
+}
+
+message BatchSummary {
+  string batch_id = 1;
+  uint32 total_jobs = 2;
+  uint32 results_received = 3;
+  repeated JobResult results = 4;
+  demo.common.RequestContext context = 5;
+}

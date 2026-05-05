@@ -1,0 +1,14 @@
+[package]
+name = "assignment"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+bw-core = { path = "../../bw-core" }
+
+tokio = { version = "1", features = ["full"] }
+prost = "0.13"
+zenoh = "1"
+flume = "0.11"
+tracing = "0.1"

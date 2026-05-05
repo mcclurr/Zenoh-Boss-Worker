@@ -10,71 +10,71 @@ services:
 
   orchestrator:
     build:
-      context: ./../../..
+      context: ./../../../../..
       dockerfile: docker/Dockerfile.python-app
     container_name: orchestrator
     depends_on:
       - zenoh
     command: ["python", "-u", "-m", "bw.services.orchestrator.main"]
     volumes:
-      - ./../../../out/python:/app/out
+      - ./../../../../../out/python:/app/out
     env_file:
-     - ./../../../.env
+     - ./../../../../../.env
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
   worker1:
     build:
-      context: ./../../..
+      context: ./../../../../..
       dockerfile: docker/Dockerfile.python-app
     container_name: worker1
     command: ["python", "-u", "-m", "bw.services.worker.main"]
     volumes:
-      - ./../../../out/python:/app/out
+      - ./../../../../../out/python:/app/out
     env_file:
-     - ./../../../.env
+     - ./../../../../../.env
     environment:
       - WORKER_NAME=worker-python-1
 
   worker2:
     build:
-      context: ./../../..
+      context: ./../../../../..
       dockerfile: docker/Dockerfile.python-app
     container_name: worker2
     command: ["python", "-u", "-m", "bw.services.worker.main"]
     volumes:
-      - ./../../../out/python:/app/out
+      - ./../../../../../out/python:/app/out
     env_file:
-     - ./../../../.env
+     - ./../../../../../.env
     environment:
       - WORKER_NAME=worker-python-2
 
   producer:
     build:
-      context: ./../../..
+      context: ./../../../../..
       dockerfile: docker/Dockerfile.python-app
     container_name: producer
     depends_on:
       - zenoh
     command: ["python", "-u", "-m", "bw.services.producer.main"]
     volumes:
-      - ./../../../out/python:/app/out
+      - ./../../../../../out/python:/app/out
     env_file:
-     - ./../../../.env
+     - ./../../../../../.env
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
   consumer:
     build:
-      context: ./../../..
+      context: ./../../../../..
       dockerfile: docker/Dockerfile.python-app
     container_name: consumer
     depends_on:
       - zenoh
     command: ["python", "-u", "-m", "bw.services.consumer.main"]
     volumes:
-      - ./../../../out/python:/app/out
+      - ./../../../../../out/python:/app/out
     env_file:
-     - ./../../../.env
+     - ./../../../../../.env
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447

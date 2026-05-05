@@ -1,0 +1,26 @@
+services:
+  zenoh:
+    image: eclipse/zenoh
+    hostname: zenoh
+    ports:
+      - "7447:7447"
+      - "8000:8000"
+    environment:
+      - RUST_LOG=info
+
+  assignment-service:
+    build:
+      context: ./../../../../..
+      dockerfile: docker/Dockerfile.python-app
+    container_name: assignment_service
+    depends_on:
+      - zenoh
+    command: ["python", "-u", "-m", "bw.services.assignment.main"]
+    volumes:
+      - ./../../../../../out/python:/app/out
+    env_file:
+     - ./../../../../../.env
+    environment:
+      - ZENOH_ENDPOINT=tcp/zenoh:7447
+      - ASSIGNMENT_REQUEST_KEY=demo/assignment/request
+      - ASSIGNMENT_RESULT_KEY=demo/assignment/result

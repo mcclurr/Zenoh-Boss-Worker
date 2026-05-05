@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package demo.assignment;
+
+import "common/common.proto";
+
+message Worker {
+  string worker_id = 1;
+  string name = 2;
+}
+
+message Job {
+  string job_id = 1;
+  string name = 2;
+}
+
+message AssignmentCost {
+  string worker_id = 1;
+  string job_id = 2;
+  uint32 cost = 3; // lower is better
+}
+
+message AssignmentRequest {
+  string assignment_id = 1;
+  repeated Worker workers = 2;
+  repeated Job jobs = 3;
+  repeated AssignmentCost costs = 4;
+  demo.common.RequestContext context = 5;
+}
+
+message Assignment {
+  string worker_id = 1;
+  string job_id = 2;
+  uint32 cost = 3;
+}
+
+message AssignmentResult {
+  string assignment_id = 1;
+  repeated Assignment assignments = 2;
+  uint32 total_cost = 3;
+  demo.common.RequestContext context = 4;
+}

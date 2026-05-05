@@ -8,16 +8,11 @@ from chores import chores_pb2
 from bw.services.orchestrator.batch_runner import BatchRunner
 
 
-PERSON_GATHER_WINDOW_SECONDS = float(
-    os.getenv("PERSON_GATHER_WINDOW_SECONDS", "")
-)
-
-MAX_ACTIVE_FILTERS = int(os.getenv("MAX_ACTIVE_FILTERS", ""))
-
-PERSON_LAST_SUCCESS_TTL_SECONDS = float(
-    os.getenv("PERSON_LAST_SUCCESS_TTL_SECONDS", "")
-)
-
+PERSON_GATHER_WINDOW_SECONDS = float(os.getenv("PERSON_GATHER_WINDOW_SECONDS", ""))
+PERSON_LAST_SUCCESS_TTL_SECONDS = float(os.getenv("PERSON_LAST_SUCCESS_TTL_SECONDS", ""))
+ZENOH_WORKER_IDS = os.getenv("ZENOH_WORKER_IDS", "")
+WORKER_MAX_CONCURRENT_REQUESTS = int(os.getenv("WORKER_MAX_CONCURRENT_REQUESTS", ""))
+MAX_ACTIVE_FILTERS = WORKER_MAX_CONCURRENT_REQUESTS * len(ZENOH_WORKER_IDS.split(","))
 
 @dataclass
 class PendingPerson:

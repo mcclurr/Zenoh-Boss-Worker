@@ -1,5 +1,6 @@
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from chores import chores_pb2
 
@@ -12,10 +13,14 @@ from bw.messaging.zenoh import (
 
 
 WORKER_SLEEP_SECONDS = float(os.getenv("WORKER_SLEEP_SECONDS", ""))
+WORKER_MAX_CONCURRENT_REQUESTS = int(os.getenv("WORKER_MAX_CONCURRENT_REQUESTS", ""))
 
 
 def main() -> None:
     worker_name = os.getenv("WORKER_NAME", "")
+
+    if not worker_name:
+        raise RuntimeError("WORKER_NAME must be set")
 
     logger = init_logging(worker_name)
 
@@ -24,13 +29,19 @@ def main() -> None:
     with open_zenoh_session() as session:
         result_pub = session.declare_publisher(CHORE_FILTER_RESULT_KEY)
 
+        executor = ThreadPoolExecutor(
+            max_workers=WORKER_MAX_CONCURRENT_REQUESTS,
+            thread_name_prefix=f"{worker_name}-request",
+        )
+
         logger.info(
             "[worker %s] subscribed to chore filter requests: "
-            "worker_name=%s request_key=%s result_key=%s",
+            "worker_name=%s request_key=%s result_key=%s max_concurrent_requests=%s",
             worker_name,
             worker_name,
             request_key,
             CHORE_FILTER_RESULT_KEY,
+            WORKER_MAX_CONCURRENT_REQUESTS,
         )
 
         def on_request(sample) -> None:
@@ -39,7 +50,7 @@ def main() -> None:
                 request.ParseFromString(sample.payload.to_bytes())
 
                 logger.info(
-                    "[worker %s] got chore filter request: "
+                    "[worker %s] received chore filter request: "
                     "filter_id=%s chores_id=%s person_id=%s chores=%s "
                     "available_minutes=%s",
                     worker_name,
@@ -50,34 +61,66 @@ def main() -> None:
                     request.person.available_minutes,
                 )
 
-                result = process_chore_filter_request(
-                    request=request,
-                    actual_worker_name=worker_name,
-                    logger=logger,
-                )
-
-                result_pub.put(result.SerializeToString())
-
-                logger.info(
-                    "[worker %s] sent chore filter result: "
-                    "filter_id=%s person_id=%s accepted=%s rejected=%s "
-                    "used_minutes=%s remaining_minutes=%s",
+                executor.submit(
+                    handle_chore_filter_request,
+                    request,
                     worker_name,
-                    result.filter_id,
-                    result.person.person_id,
-                    len(result.accepted_chores),
-                    len(result.rejected_chores),
-                    result.used_minutes,
-                    result.remaining_minutes,
+                    result_pub,
+                    logger,
                 )
 
             except Exception as exc:
-                logger.exception("[worker %s] error: %s", worker_name, exc)
+                logger.exception("[worker %s] failed to accept request: %s", worker_name, exc)
 
         session.declare_subscriber(request_key, on_request)
 
         while True:
             time.sleep(1)
+
+
+def handle_chore_filter_request(
+    request: chores_pb2.ChoreFilterRequest,
+    worker_name: str,
+    result_pub,
+    logger,
+) -> None:
+    try:
+        logger.info(
+            "[worker %s] started chore filter request: "
+            "filter_id=%s person_id=%s",
+            worker_name,
+            request.filter_id,
+            request.person.person_id,
+        )
+
+        result = process_chore_filter_request(
+            request=request,
+            actual_worker_name=worker_name,
+            logger=logger,
+        )
+
+        result_pub.put(result.SerializeToString())
+
+        logger.info(
+            "[worker %s] sent chore filter result: "
+            "filter_id=%s person_id=%s accepted=%s rejected=%s "
+            "used_minutes=%s remaining_minutes=%s",
+            worker_name,
+            result.filter_id,
+            result.person.person_id,
+            len(result.accepted_chores),
+            len(result.rejected_chores),
+            result.used_minutes,
+            result.remaining_minutes,
+        )
+
+    except Exception as exc:
+        logger.exception(
+            "[worker %s] failed while processing request: filter_id=%s error=%s",
+            worker_name,
+            request.filter_id,
+            exc,
+        )
 
 
 def process_chore_filter_request(

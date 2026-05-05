@@ -20,7 +20,7 @@ ZENOH_WORKER_IDS = [
     if worker_id.strip()
 ]
 
-ZENOH_MAX_INFLIGHT_PER_WORKER = int(os.getenv("ZENOH_MAX_INFLIGHT_PER_WORKER", ""))
+WORKER_MAX_CONCURRENT_REQUESTS = int(os.getenv("WORKER_MAX_CONCURRENT_REQUESTS", ""))
 
 
 def main() -> None:
@@ -48,7 +48,7 @@ def main() -> None:
             consumer_pub=consumer_pub,
             logger=logger,
             worker_instance_ids=ZENOH_WORKER_IDS,
-            max_inflight_per_worker=ZENOH_MAX_INFLIGHT_PER_WORKER,
+            max_inflight_per_worker=WORKER_MAX_CONCURRENT_REQUESTS,
         )
 
         coordinator = BatchCoordinator(
@@ -66,7 +66,7 @@ def main() -> None:
             WORKER_STATUS_KEY,
             ORCHESTRATOR_TO_CONSUMER_KEY,
             ZENOH_WORKER_IDS,
-            ZENOH_MAX_INFLIGHT_PER_WORKER,
+            WORKER_MAX_CONCURRENT_REQUESTS,
         )
 
         while True:

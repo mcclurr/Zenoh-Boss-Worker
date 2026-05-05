@@ -11,6 +11,8 @@ dependencies = [
   "pika==1.3.2",
   "eclipse-zenoh==1.0.0",
   "protobuf>=7.0.0",
+  "numpy",
+  "scipy",
 ]
 
 [project.optional-dependencies]

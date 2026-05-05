@@ -1,3 +1,6 @@
+import numpy as np
+from scipy.optimize import linear_sum_assignment
+
 from dataclasses import dataclass
 
 
@@ -18,16 +21,6 @@ IMPOSSIBLE_COST = 1_000_000_000
 
 
 def solve_assignment(data: AssignmentInput) -> AssignmentOutput:
-    """
-    Solves the minimum-cost one-to-one assignment problem.
-
-    This is intentionally dependency-free for now. It uses DP over job subsets,
-    which is great for small/medium demos and unit testing.
-
-    Later, this function can be replaced with scipy.optimize.linear_sum_assignment
-    or a real Hungarian/Jonker-Volgenant implementation without changing the
-    service, protobuf handler, or tests.
-    """
     workers = data.workers
     jobs = data.jobs
 
@@ -39,55 +32,34 @@ def solve_assignment(data: AssignmentInput) -> AssignmentOutput:
 
     if len(workers) > len(jobs):
         raise ValueError(
-            f"More workers than jobs is not supported by this simple solver: "
+            f"More workers than jobs is not supported: "
             f"workers={len(workers)} jobs={len(jobs)}"
         )
 
-    # dp(worker_index, used_jobs_mask) -> (cost, chosen_job_indices)
-    memo: dict[tuple[int, int], tuple[int, list[int]]] = {}
+    # Build dense cost matrix
+    cost_matrix = np.full((len(workers), len(jobs)), IMPOSSIBLE_COST)
 
-    def dp(worker_index: int, used_mask: int) -> tuple[int, list[int]]:
-        if worker_index == len(workers):
-            return 0, []
+    for i, worker_id in enumerate(workers):
+        for j, job_id in enumerate(jobs):
+            if (worker_id, job_id) in data.costs:
+                cost_matrix[i, j] = data.costs[(worker_id, job_id)]
 
-        key = (worker_index, used_mask)
-        if key in memo:
-            return memo[key]
-
-        worker_id = workers[worker_index]
-        best_cost = IMPOSSIBLE_COST
-        best_path: list[int] = []
-
-        for job_index, job_id in enumerate(jobs):
-            if used_mask & (1 << job_index):
-                continue
-
-            pair_cost = data.costs.get((worker_id, job_id), IMPOSSIBLE_COST)
-            remaining_cost, remaining_path = dp(
-                worker_index + 1,
-                used_mask | (1 << job_index),
-            )
-
-            total = pair_cost + remaining_cost
-
-            if total < best_cost:
-                best_cost = total
-                best_path = [job_index] + remaining_path
-
-        memo[key] = (best_cost, best_path)
-        return memo[key]
-
-    total_cost, chosen_job_indices = dp(0, 0)
-
-    if total_cost >= IMPOSSIBLE_COST:
-        raise ValueError("No valid assignment found")
+    # Solve assignment
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
     assignments = []
+    total_cost = 0
 
-    for worker_id, job_index in zip(workers, chosen_job_indices):
-        job_id = jobs[job_index]
-        cost = data.costs[(worker_id, job_id)]
+    for i, j in zip(row_ind, col_ind):
+        worker_id = workers[i]
+        job_id = jobs[j]
+        cost = int(cost_matrix[i, j])
+
+        if cost >= IMPOSSIBLE_COST:
+            raise ValueError("No valid assignment found")
+
         assignments.append((worker_id, job_id, cost))
+        total_cost += cost
 
     return AssignmentOutput(
         assignments=assignments,

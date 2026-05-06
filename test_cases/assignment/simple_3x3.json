@@ -1,0 +1,26 @@
+{
+  "name": "simple_3x3",
+  "workers": ["alice", "bob", "carol"],
+  "jobs": ["dishes", "laundry", "vacuum"],
+  "costs": [
+    {"worker_id": "alice", "job_id": "dishes", "cost": 1},
+    {"worker_id": "alice", "job_id": "laundry", "cost": 10},
+    {"worker_id": "alice", "job_id": "vacuum", "cost": 10},
+
+    {"worker_id": "bob", "job_id": "dishes", "cost": 10},
+    {"worker_id": "bob", "job_id": "laundry", "cost": 1},
+    {"worker_id": "bob", "job_id": "vacuum", "cost": 10},
+
+    {"worker_id": "carol", "job_id": "dishes", "cost": 10},
+    {"worker_id": "carol", "job_id": "laundry", "cost": 10},
+    {"worker_id": "carol", "job_id": "vacuum", "cost": 1}
+  ],
+  "expected": {
+    "total_cost": 3,
+    "assignments": [
+      {"worker_id": "alice", "job_id": "dishes", "cost": 1},
+      {"worker_id": "bob", "job_id": "laundry", "cost": 1},
+      {"worker_id": "carol", "job_id": "vacuum", "cost": 1}
+    ]
+  }
+}

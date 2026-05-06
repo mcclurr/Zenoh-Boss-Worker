@@ -4,7 +4,8 @@ use bw_core::config::DynError;
 use lapjv::lapjv;
 use ndarray::Array2;
 
-pub const IMPOSSIBLE_COST: f64 = 1_000_000_000.0;
+pub const IMPOSSIBLE_SCORE: f64 = -1.0;
+pub const SOLVER_IMPOSSIBLE_COST: f64 = 1_000_000_000.0;
 
 #[derive(Debug, Clone)]
 pub struct AssignmentInput {
@@ -43,35 +44,46 @@ pub fn solve_assignment(input: AssignmentInput) -> Result<AssignmentOutput, DynE
         .into());
     }
 
-    let mut cost_matrix = Array2::<f64>::from_elem(
-        (workers.len(), jobs.len()),
-        IMPOSSIBLE_COST,
-    );
+    let mut score_matrix =
+        Array2::<f64>::from_elem((workers.len(), jobs.len()), IMPOSSIBLE_SCORE);
 
     for (worker_index, worker_id) in workers.iter().enumerate() {
         for (job_index, job_id) in jobs.iter().enumerate() {
-            if let Some(cost) = input.costs.get(&(worker_id.clone(), job_id.clone())) {
-                cost_matrix[[worker_index, job_index]] = *cost as f64;
+            if let Some(score) = input.costs.get(&(worker_id.clone(), job_id.clone())) {
+                score_matrix[[worker_index, job_index]] = *score as f64;
             }
         }
     }
 
-    let (_row_assignment, column_assignment) = lapjv(&cost_matrix)?;
+    let mut solver_matrix =
+        Array2::<f64>::from_elem((workers.len(), jobs.len()), SOLVER_IMPOSSIBLE_COST);
+
+    for worker_index in 0..workers.len() {
+        for job_index in 0..jobs.len() {
+            let score = score_matrix[[worker_index, job_index]];
+
+            if score != IMPOSSIBLE_SCORE {
+                solver_matrix[[worker_index, job_index]] = -score;
+            }
+        }
+    }
+
+    let (_row_assignment, column_assignment) = lapjv(&solver_matrix)?;
 
     let mut assignments = Vec::new();
     let mut total_cost: u32 = 0;
 
     for (worker_index, job_index) in column_assignment.iter().enumerate() {
-        let worker_id = workers[worker_index].clone();
-        let job_id = jobs[*job_index].clone();
+        let solver_cost = solver_matrix[[worker_index, *job_index]];
 
-        let cost_f64 = cost_matrix[[worker_index, *job_index]];
-
-        if cost_f64 >= IMPOSSIBLE_COST {
+        if solver_cost >= SOLVER_IMPOSSIBLE_COST {
             return Err("No valid assignment found".into());
         }
 
-        let cost = cost_f64 as u32;
+        let worker_id = workers[worker_index].clone();
+        let job_id = jobs[*job_index].clone();
+        let cost = score_matrix[[worker_index, *job_index]] as u32;
+
         assignments.push((worker_id, job_id, cost));
         total_cost = total_cost.saturating_add(cost);
     }

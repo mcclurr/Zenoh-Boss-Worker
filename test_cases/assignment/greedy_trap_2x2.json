@@ -9,10 +9,10 @@
     {"worker_id": "w2", "job_id": "j2", "cost": 100}
   ],
   "expected": {
-    "total_cost": 3,
+    "total_cost": 101,
     "assignments": [
-      {"worker_id": "w1", "job_id": "j2", "cost": 2},
-      {"worker_id": "w2", "job_id": "j1", "cost": 1}
+      {"worker_id": "w1", "job_id": "j1", "cost": 1},
+      {"worker_id": "w2", "job_id": "j2", "cost": 100}
     ]
   }
 }

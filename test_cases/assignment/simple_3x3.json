@@ -4,7 +4,7 @@
   "jobs": ["dishes", "laundry", "vacuum"],
   "costs": [
     {"worker_id": "alice", "job_id": "dishes", "cost": 1},
-    {"worker_id": "alice", "job_id": "laundry", "cost": 10},
+    {"worker_id": "alice", "job_id": "laundry", "cost": 11},
     {"worker_id": "alice", "job_id": "vacuum", "cost": 10},
 
     {"worker_id": "bob", "job_id": "dishes", "cost": 10},
@@ -16,9 +16,9 @@
     {"worker_id": "carol", "job_id": "vacuum", "cost": 1}
   ],
   "expected": {
-    "total_cost": 30,
+    "total_cost": 31,
     "assignments": [
-      {"worker_id": "alice", "job_id": "laundry", "cost": 10},
+      {"worker_id": "alice", "job_id": "laundry", "cost": 11},
       {"worker_id": "bob", "job_id": "vacuum", "cost": 10},
       {"worker_id": "carol", "job_id": "dishes", "cost": 10}
     ]

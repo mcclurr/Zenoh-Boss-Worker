@@ -1,0 +1,21 @@
+{
+  "name": "rectangular_workers_less_than_jobs_2x3",
+  "workers": ["alice", "bob"],
+  "jobs": ["dishes", "laundry", "vacuum"],
+  "costs": [
+    {"worker_id": "alice", "job_id": "dishes", "cost": 10},
+    {"worker_id": "alice", "job_id": "laundry", "cost": 50},
+    {"worker_id": "alice", "job_id": "vacuum", "cost": 20},
+
+    {"worker_id": "bob", "job_id": "dishes", "cost": 40},
+    {"worker_id": "bob", "job_id": "laundry", "cost": 30},
+    {"worker_id": "bob", "job_id": "vacuum", "cost": 60}
+  ],
+  "expected": {
+    "total_cost": 110,
+    "assignments": [
+      {"worker_id": "alice", "job_id": "laundry", "cost": 50},
+      {"worker_id": "bob", "job_id": "vacuum", "cost": 60}
+    ]
+  }
+}

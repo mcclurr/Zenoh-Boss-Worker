@@ -28,6 +28,16 @@ class FakeBatchRunner:
             }
         )
 
+class FakeExecutor:
+    def __init__(self, batch_runner):
+        self.batch_runner = batch_runner
+
+    def submit_window(self, chores, people, on_person_complete):
+        for person in people:
+            self.batch_runner.run_chore_filter(chores, person)
+
+        for person in people:
+            on_person_complete(person, True)
 
 class FakeLogger:
     def info(self, *args, **kwargs):
@@ -80,21 +90,13 @@ def make_person(event: dict, case_name: str):
 
 
 def make_config(case: dict) -> OrchestratorConfig:
-    worker_count = case.get("worker_count", case.get("max_active_filters", 4))
-    worker_max_concurrent_requests = case.get("worker_max_concurrent_requests", 1)
-
     return OrchestratorConfig(
-        worker_ids=[
-            f"worker-{i}"
-            for i in range(1, worker_count + 1)
-        ],
-        worker_max_concurrent_requests=worker_max_concurrent_requests,
+        num_threads=case.get("num_threads", case.get("max_active_filters", 4)),
         person_gather_window_seconds=case.get("window_seconds", 0.05),
         person_last_success_ttl_seconds=case.get(
             "person_last_success_ttl_seconds",
             30,
         ),
-        result_timeout_seconds=case.get("result_timeout_seconds", 1),
     )
 
 
@@ -105,7 +107,7 @@ def test_orchestrator_scenario(case_path):
     batch_runner = FakeBatchRunner()
 
     coordinator = BatchCoordinator(
-        batch_runner=batch_runner,
+        executor=FakeExecutor(batch_runner),
         config=make_config(case),
         logger=FakeLogger(),
     )

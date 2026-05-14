@@ -11,8 +11,8 @@ from bw.services.orchestrator.config import OrchestratorConfig
 from bw.services.orchestrator.coordinator import BatchCoordinator
 
 
-ROOT = Path(__file__).resolve().parents[2]
-CASE_DIR = ROOT / "test_cases" / "orchestrator"
+ROOT = Path(__file__).resolve().parents[3]
+CASE_DIR = ROOT / "test_cases" / "orchestrator" / "coordinator"
 
 
 class FakeBatchRunner:

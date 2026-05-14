@@ -11,7 +11,6 @@ from bw.services.orchestrator.batch_runner import BatchRunner
 from bw.services.orchestrator.config import load_orchestrator_config_from_env
 from bw.services.orchestrator.coordinator import BatchCoordinator
 from bw.services.orchestrator.handler import OrchestratorHandler
-from bw.services.orchestrator.result_dispatcher import ZenohResultDispatcher
 
 
 def main() -> None:
@@ -21,24 +20,13 @@ def main() -> None:
     with open_zenoh_session() as zenoh_session:
         logger.info("[orchestrator] connected to Zenoh")
 
-        result_dispatcher = ZenohResultDispatcher(
-            zenoh_session=zenoh_session,
-            logger=logger,
-        )
-        result_dispatcher.start()
-
         consumer_pub = zenoh_session.declare_publisher(
             ORCHESTRATOR_TO_CONSUMER_KEY
         )
 
         batch_runner = BatchRunner(
-            zenoh_session=zenoh_session,
-            result_dispatcher=result_dispatcher,
             consumer_pub=consumer_pub,
             logger=logger,
-            worker_instance_ids=config.worker_ids,
-            max_inflight_per_worker=config.worker_max_concurrent_requests,
-            result_timeout_seconds=config.result_timeout_seconds,
         )
 
         coordinator = BatchCoordinator(
@@ -57,12 +45,11 @@ def main() -> None:
 
         logger.info(
             "[orchestrator] subscribed: chores_key=%s person_key=%s "
-            "summary_key=%s worker_ids=%s max_inflight_per_worker=%s",
+            "summary_key=%s num_threads=%s",
             JOBS_BATCH_KEY,
             WORKER_STATUS_KEY,
             ORCHESTRATOR_TO_CONSUMER_KEY,
-            config.worker_ids,
-            config.worker_max_concurrent_requests,
+            config.num_threads,
         )
 
         while True:

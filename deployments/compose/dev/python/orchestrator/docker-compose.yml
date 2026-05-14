@@ -23,32 +23,6 @@ services:
     environment:
       - ZENOH_ENDPOINT=tcp/zenoh:7447
 
-  worker1:
-    build:
-      context: ./../../../../..
-      dockerfile: docker/Dockerfile.python-app
-    container_name: worker1
-    command: ["python", "-u", "-m", "bw.services.worker.main"]
-    volumes:
-      - ./../../../../../out/python:/app/out
-    env_file:
-     - ./../../../../../.env
-    environment:
-      - WORKER_NAME=worker-python-1
-
-  worker2:
-    build:
-      context: ./../../../../..
-      dockerfile: docker/Dockerfile.python-app
-    container_name: worker2
-    command: ["python", "-u", "-m", "bw.services.worker.main"]
-    volumes:
-      - ./../../../../../out/python:/app/out
-    env_file:
-     - ./../../../../../.env
-    environment:
-      - WORKER_NAME=worker-python-2
-
   producer:
     build:
       context: ./../../../../..

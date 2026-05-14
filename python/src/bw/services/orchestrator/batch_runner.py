@@ -1,46 +1,21 @@
-import queue
 import threading
 import time
 
 from chores import chores_pb2
 
-from bw.messaging.zenoh import worker_request_key
-from bw.services.orchestrator.result_dispatcher import ZenohResultDispatcher
+
+LOCAL_WORKER_NAME = "local-orchestrator"
 
 
 class BatchRunner:
     def __init__(
         self,
-        zenoh_session,
-        result_dispatcher: ZenohResultDispatcher,
         consumer_pub,
         logger,
-        worker_instance_ids: list[str],
-        max_inflight_per_worker: int,
-        result_timeout_seconds: float,
     ) -> None:
-        self.zenoh_session = zenoh_session
-        self.result_dispatcher = result_dispatcher
         self.consumer_pub = consumer_pub
         self.logger = logger
-
-        self.worker_instance_ids = worker_instance_ids
-        self.max_inflight_per_worker = max_inflight_per_worker
-        self.result_timeout_seconds = result_timeout_seconds
-
         self.consumer_pub_lock = threading.Lock()
-        self.worker_lock = threading.Lock()
-
-        self.worker_inflight: dict[str, int] = {
-            worker_id: 0 for worker_id in worker_instance_ids
-        }
-
-        self.worker_publishers = {
-            worker_id: self.zenoh_session.declare_publisher(
-                worker_request_key(worker_id)
-            )
-            for worker_id in worker_instance_ids
-        }
 
     def run_chore_filter(
         self,
@@ -49,104 +24,32 @@ class BatchRunner:
     ) -> None:
         filter_id = f"{chores.chores_id}-{person.person_id}"
 
-        worker_instance_id = self._reserve_worker_instance(filter_id)
-
         self.logger.info(
-            "[orchestrator] running chore filter: "
+            "[orchestrator] running local chore filter: "
             "chores_id=%s filter_id=%s person_id=%s chores=%s "
-            "available_minutes=%s worker_instance_id=%s",
+            "available_minutes=%s",
             chores.chores_id,
             filter_id,
             person.person_id,
             len(chores.chores),
             person.available_minutes,
-            worker_instance_id,
         )
 
-        result_queue = self.result_dispatcher.register_filter(filter_id)
+        request = self._build_chore_filter_request(
+            filter_id=filter_id,
+            chores=chores,
+            person=person,
+        )
 
-        try:
-            request = self._build_chore_filter_request(
-                filter_id=filter_id,
-                chores=chores,
-                person=person,
-            )
+        result = self._process_chore_filter_request(request)
 
-            self._publish_chore_filter_request(
-                worker_instance_id=worker_instance_id,
-                request=request,
-            )
+        summary = self._build_summary(
+            chores_id=chores.chores_id,
+            context=chores.context,
+            results=[result],
+        )
 
-            results = self._wait_for_results(
-                filter_id=filter_id,
-                expected_result_count=1,
-                result_queue=result_queue,
-            )
-
-            summary = self._build_summary(
-                chores_id=chores.chores_id,
-                context=chores.context,
-                results=results,
-            )
-
-            self._publish_summary(summary)
-
-        finally:
-            self.result_dispatcher.unregister_filter(filter_id)
-            self._release_worker_instance(worker_instance_id)
-
-    def _reserve_worker_instance(self, filter_id: str) -> str:
-        with self.worker_lock:
-            available_workers = [
-                worker_id
-                for worker_id, inflight in self.worker_inflight.items()
-                if inflight < self.max_inflight_per_worker
-            ]
-
-            if not available_workers:
-                raise RuntimeError(
-                    f"No Zenoh worker instance capacity available for "
-                    f"filter_id={filter_id}"
-                )
-
-            selected_worker = min(
-                available_workers,
-                key=lambda worker_id: self.worker_inflight[worker_id],
-            )
-
-            self.worker_inflight[selected_worker] += 1
-
-            self.logger.info(
-                "[orchestrator] reserved worker instance: "
-                "filter_id=%s worker_instance_id=%s inflight=%s "
-                "max_inflight=%s",
-                filter_id,
-                selected_worker,
-                self.worker_inflight[selected_worker],
-                self.max_inflight_per_worker,
-            )
-
-            return selected_worker
-
-    def _release_worker_instance(self, worker_instance_id: str) -> None:
-        with self.worker_lock:
-            self.worker_inflight[worker_instance_id] -= 1
-
-            if self.worker_inflight[worker_instance_id] < 0:
-                self.logger.warning(
-                    "[orchestrator] worker inflight count went negative: "
-                    "worker_instance_id=%s",
-                    worker_instance_id,
-                )
-
-                self.worker_inflight[worker_instance_id] = 0
-
-            self.logger.info(
-                "[orchestrator] released worker instance: "
-                "worker_instance_id=%s inflight=%s",
-                worker_instance_id,
-                self.worker_inflight[worker_instance_id],
-            )
+        self._publish_summary(summary)
 
     def _build_chore_filter_request(
         self,
@@ -164,94 +67,64 @@ class BatchRunner:
 
         return request
 
-    def _publish_chore_filter_request(
+    def _process_chore_filter_request(
         self,
-        worker_instance_id: str,
         request: chores_pb2.ChoreFilterRequest,
-    ) -> None:
-        publisher = self.worker_publishers[worker_instance_id]
-        key = worker_request_key(worker_instance_id)
+    ) -> chores_pb2.ChoreFilterResult:
+        person = request.person
+        available_minutes = person.available_minutes
 
-        publisher.put(request.SerializeToString())
+        accepted_chores: list[chores_pb2.Chore] = []
+        rejected_chores: list[chores_pb2.Chore] = []
 
-        self.logger.info(
-            "[orchestrator] published chore filter request to zenoh worker: "
-            "key=%s worker_instance_id=%s filter_id=%s chores_id=%s "
-            "person_id=%s chores=%s available_minutes=%s",
-            key,
-            worker_instance_id,
-            request.filter_id,
-            request.chores.chores_id,
-            request.person.person_id,
-            len(request.chores.chores),
-            request.person.available_minutes,
+        used_minutes = 0
+
+        for chore in request.chores.chores:
+            if used_minutes + chore.estimated_minutes <= available_minutes:
+                accepted_chores.append(chore)
+                used_minutes += chore.estimated_minutes
+
+                self.logger.info(
+                    "[orchestrator] accepted chore locally: "
+                    "filter_id=%s person_id=%s chore_id=%s name=%s "
+                    "estimated_minutes=%s used_minutes=%s",
+                    request.filter_id,
+                    person.person_id,
+                    chore.chore_id,
+                    chore.name,
+                    chore.estimated_minutes,
+                    used_minutes,
+                )
+
+            else:
+                rejected_chores.append(chore)
+
+                self.logger.info(
+                    "[orchestrator] rejected chore locally: "
+                    "filter_id=%s person_id=%s chore_id=%s name=%s "
+                    "estimated_minutes=%s used_minutes=%s available_minutes=%s",
+                    request.filter_id,
+                    person.person_id,
+                    chore.chore_id,
+                    chore.name,
+                    chore.estimated_minutes,
+                    used_minutes,
+                    available_minutes,
+                )
+
+        result = chores_pb2.ChoreFilterResult(
+            filter_id=request.filter_id,
+            chores_id=request.chores.chores_id,
+            person=person,
+            used_minutes=used_minutes,
+            remaining_minutes=max(available_minutes - used_minutes, 0),
+            context=request.context,
         )
 
-    def _wait_for_results(
-        self,
-        filter_id: str,
-        expected_result_count: int,
-        result_queue: queue.Queue[chores_pb2.ChoreFilterResult],
-    ) -> list[chores_pb2.ChoreFilterResult]:
-        self.logger.info(
-            "[orchestrator] waiting for chore filter results: "
-            "filter_id=%s expected=%s",
-            filter_id,
-            expected_result_count,
-        )
+        result.accepted_chores.extend(accepted_chores)
+        result.rejected_chores.extend(rejected_chores)
 
-        deadline = time.monotonic() + self.result_timeout_seconds
-
-        results: list[chores_pb2.ChoreFilterResult] = []
-        seen_filter_ids: set[str] = set()
-
-        while len(results) < expected_result_count:
-            remaining = deadline - time.monotonic()
-
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"Timed out waiting for chore filter result: "
-                    f"filter_id={filter_id} "
-                    f"received={len(results)} "
-                    f"expected={expected_result_count}"
-                )
-
-            try:
-                result = result_queue.get(
-                    timeout=min(remaining, 0.25)
-                )
-
-            except queue.Empty:
-                continue
-
-            if result.filter_id in seen_filter_ids:
-                self.logger.warning(
-                    "[orchestrator] ignoring duplicate chore filter result: "
-                    "filter_id=%s",
-                    result.filter_id,
-                )
-                continue
-
-            seen_filter_ids.add(result.filter_id)
-            results.append(result)
-
-            self.logger.info(
-                "[orchestrator] received chore filter result %s/%s: "
-                "filter_id=%s chores_id=%s person_id=%s "
-                "accepted=%s rejected=%s "
-                "used_minutes=%s remaining_minutes=%s",
-                len(results),
-                expected_result_count,
-                result.filter_id,
-                result.chores_id,
-                result.person.person_id,
-                len(result.accepted_chores),
-                len(result.rejected_chores),
-                result.used_minutes,
-                result.remaining_minutes,
-            )
-
-        return results
+        return result
 
     def _build_summary(
         self,
@@ -283,7 +156,7 @@ class BatchRunner:
             self.consumer_pub.put(summary.SerializeToString())
 
         self.logger.info(
-            "[orchestrator] published chore filter summary to zenoh: "
+            "[orchestrator] published local chore filter summary: "
             "chores_id=%s people_evaluated=%s chores_accepted=%s",
             summary.chores_id,
             summary.total_people_evaluated,

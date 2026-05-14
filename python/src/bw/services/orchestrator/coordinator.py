@@ -181,18 +181,12 @@ class BatchCoordinator:
 
                 return
 
-            available_slots = (
-                self.config.max_active_filters
-                - self.active_filter_count
-            )
-
-            if available_slots <= 0:
+            if self.active_filter_count > 0:
                 dropped_count = len(window.pending_people)
 
                 self.logger.info(
-                    "[orchestrator] dropping person window because no filter "
-                    "slots are available: latest_chores_id=%s active=%s "
-                    "max=%s dropped_people=%s",
+                    "[orchestrator] dropping person window because another batch is still "
+                    "active: latest_chores_id=%s active=%s max=%s dropped_people=%s",
                     self.latest_chores.chores_id,
                     self.active_filter_count,
                     self.config.max_active_filters,
@@ -203,7 +197,7 @@ class BatchCoordinator:
 
             people_to_run = self._choose_people_to_run_locked(
                 people=list(window.pending_people.values()),
-                max_people=available_slots,
+                max_people=self.config.max_active_filters,
             )
 
             selected_person_ids = {

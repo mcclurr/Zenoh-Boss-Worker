@@ -7,14 +7,14 @@ from bw.messaging.zenoh import (
     WORKER_STATUS_KEY,
     open_zenoh_session,
 )
-from bw.services.orchestrator.batch_runner import BatchRunner
+from bw.services.orchestrator.execution.batch_runner import BatchRunner
 from bw.services.orchestrator.config import load_orchestrator_config_from_env
-from bw.services.orchestrator.coordinator import BatchCoordinator
-from bw.services.orchestrator.executor import (
+from bw.services.orchestrator.coordination.coordinator import BatchCoordinator
+from bw.services.orchestrator.execution.executor import (
     JobSubmissionMode,
     build_window_executor,
 )
-from bw.services.orchestrator.handler import OrchestratorHandler
+from bw.services.orchestrator.transport.handler import OrchestratorHandler
 
 
 JOB_SUBMISSION_MODE = JobSubmissionMode.PER_PERSON

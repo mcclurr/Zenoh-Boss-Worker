@@ -8,7 +8,7 @@ from chores import chores_pb2
 from common import common_pb2
 
 from bw.services.orchestrator.config import OrchestratorConfig
-from bw.services.orchestrator.coordinator import BatchCoordinator
+from bw.services.orchestrator.coordination.coordinator import BatchCoordinator
 
 
 ROOT = Path(__file__).resolve().parents[3]

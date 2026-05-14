@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from chores import chores_pb2
 
 from bw.services.orchestrator.config import OrchestratorConfig
-from bw.services.orchestrator.executor import WindowExecutor
+from bw.services.orchestrator.execution.executor import WindowExecutor
 
 
 @dataclass

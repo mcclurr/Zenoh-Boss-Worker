@@ -2,7 +2,7 @@
 
 from chores import chores_pb2
 
-from bw.services.orchestrator.coordinator import BatchCoordinator
+from bw.services.orchestrator.coordination.coordinator import BatchCoordinator
 
 
 class OrchestratorHandler:

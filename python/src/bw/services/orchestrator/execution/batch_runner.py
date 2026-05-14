@@ -1,4 +1,4 @@
-from bw.services.orchestrator.processor import process_chore_filter_request
+from bw.services.orchestrator.processing.processor import process_chore_filter_request
 
 import threading
 import time

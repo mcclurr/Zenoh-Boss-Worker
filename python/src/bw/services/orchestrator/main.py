@@ -10,7 +10,14 @@ from bw.messaging.zenoh import (
 from bw.services.orchestrator.batch_runner import BatchRunner
 from bw.services.orchestrator.config import load_orchestrator_config_from_env
 from bw.services.orchestrator.coordinator import BatchCoordinator
+from bw.services.orchestrator.executor import (
+    JobSubmissionMode,
+    build_window_executor,
+)
 from bw.services.orchestrator.handler import OrchestratorHandler
+
+
+JOB_SUBMISSION_MODE = JobSubmissionMode.PER_PERSON
 
 
 def main() -> None:
@@ -29,8 +36,14 @@ def main() -> None:
             logger=logger,
         )
 
-        coordinator = BatchCoordinator(
+        executor = build_window_executor(
+            mode=JOB_SUBMISSION_MODE,
             batch_runner=batch_runner,
+            logger=logger,
+        )
+
+        coordinator = BatchCoordinator(
+            executor=executor,
             config=config,
             logger=logger,
         )
@@ -40,16 +53,24 @@ def main() -> None:
             logger=logger,
         )
 
-        zenoh_session.declare_subscriber(JOBS_BATCH_KEY, handler.on_chores_sample)
-        zenoh_session.declare_subscriber(WORKER_STATUS_KEY, handler.on_person_sample)
+        zenoh_session.declare_subscriber(
+            JOBS_BATCH_KEY,
+            handler.on_chores_sample,
+        )
+
+        zenoh_session.declare_subscriber(
+            WORKER_STATUS_KEY,
+            handler.on_person_sample,
+        )
 
         logger.info(
             "[orchestrator] subscribed: chores_key=%s person_key=%s "
-            "summary_key=%s num_threads=%s",
+            "summary_key=%s num_threads=%s job_submission_mode=%s",
             JOBS_BATCH_KEY,
             WORKER_STATUS_KEY,
             ORCHESTRATOR_TO_CONSUMER_KEY,
             config.num_threads,
+            JOB_SUBMISSION_MODE.value,
         )
 
         while True:

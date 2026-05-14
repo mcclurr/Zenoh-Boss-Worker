@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 from chores import chores_pb2
 
-from bw.services.orchestrator.batch_runner import BatchRunner
 from bw.services.orchestrator.config import OrchestratorConfig
+from bw.services.orchestrator.executor import WindowExecutor
 
 
 @dataclass
@@ -26,11 +26,11 @@ class PersonWindow:
 class BatchCoordinator:
     def __init__(
         self,
-        batch_runner: BatchRunner,
+        executor: WindowExecutor,
         config: OrchestratorConfig,
         logger,
     ) -> None:
-        self.batch_runner = batch_runner
+        self.executor = executor
         self.config = config
         self.logger = logger
 
@@ -147,6 +147,39 @@ class BatchCoordinator:
             latest_chores_id,
         )
 
+    def _on_person_complete(
+        self,
+        person: chores_pb2.PersonAvailability,
+        succeeded: bool,
+    ) -> None:
+        now = time.monotonic()
+
+        with self.lock:
+            self.active_filter_count -= 1
+
+            if self.active_filter_count < 0:
+                self.logger.warning(
+                    "[orchestrator] active filter count went negative"
+                )
+                self.active_filter_count = 0
+
+            if not succeeded:
+                self.person_last_selected.pop(
+                    person.person_id,
+                    None,
+                )
+
+            self._prune_person_history_locked(now)
+
+        self.logger.info(
+            "[orchestrator] completed person job: "
+            "person_id=%s succeeded=%s active=%s max=%s",
+            person.person_id,
+            succeeded,
+            self.active_filter_count,
+            self.config.max_active_filters,
+        )
+
     def expire_stale_if_idle(
         self,
         now: float,
@@ -216,6 +249,8 @@ class BatchCoordinator:
 
             now = time.monotonic()
 
+            people_messages = []
+
             for pending_person in people_to_run:
                 person = chores_pb2.PersonAvailability()
                 person.CopyFrom(pending_person.message)
@@ -223,13 +258,13 @@ class BatchCoordinator:
                 self.active_filter_count += 1
                 self.person_last_selected[person.person_id] = now
 
-                thread = threading.Thread(
-                    target=self._run_filter_thread,
-                    args=(chores, person),
-                    daemon=True,
-                )
+                people_messages.append(person)
 
-                thread.start()
+            self.executor.submit_window(
+                chores=chores,
+                people=people_messages,
+                on_person_complete=self._on_person_complete,
+            )
 
             self.logger.info(
                 "[orchestrator] flushed person window using latest chores: "
@@ -258,42 +293,6 @@ class BatchCoordinator:
         )
 
         return prioritized[:max_people]
-
-    def _run_filter_thread(
-        self,
-        chores: chores_pb2.Chores,
-        person: chores_pb2.PersonAvailability,
-    ) -> None:
-        succeeded = False
-
-        try:
-            self.batch_runner.run_chore_filter(
-                chores=chores,
-                person=person,
-            )
-
-            succeeded = True
-
-        except Exception:
-            self.logger.exception(
-                "[orchestrator] failed to run chore filter: "
-                "person_id=%s",
-                person.person_id,
-            )
-
-        finally:
-            now = time.monotonic()
-
-            with self.lock:
-                self.active_filter_count -= 1
-
-                if not succeeded:
-                    self.person_last_selected.pop(
-                        person.person_id,
-                        None,
-                    )
-
-                self._prune_person_history_locked(now)
 
     def _prune_person_history_locked(
         self,

@@ -53,6 +53,41 @@ class BatchRunner:
 
         self._publish_summary(summary)
 
+    def run_chore_filter_window(
+        self,
+        chores: chores_pb2.Chores,
+        people: list[chores_pb2.PersonAvailability],
+    ) -> None:
+        self.logger.info(
+            "[orchestrator] running local window chore filter: "
+            "chores_id=%s people=%s chores=%s",
+            chores.chores_id,
+            len(people),
+            len(chores.chores),
+        )
+
+        results: list[chores_pb2.ChoreFilterResult] = []
+
+        for person in people:
+            filter_id = f"{chores.chores_id}-{person.person_id}"
+
+            request = self._build_chore_filter_request(
+                filter_id=filter_id,
+                chores=chores,
+                person=person,
+            )
+
+            result = process_chore_filter_request(request)
+            results.append(result)
+
+        summary = self._build_summary(
+            chores_id=chores.chores_id,
+            context=chores.context,
+            results=results,
+        )
+
+        self._publish_summary(summary)
+
     def _build_chore_filter_request(
         self,
         filter_id: str,

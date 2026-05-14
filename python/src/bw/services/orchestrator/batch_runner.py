@@ -1,4 +1,3 @@
-import os
 import queue
 import threading
 import time
@@ -7,9 +6,6 @@ from chores import chores_pb2
 
 from bw.messaging.zenoh import worker_request_key
 from bw.services.orchestrator.result_dispatcher import ZenohResultDispatcher
-
-
-RESULT_TIMEOUT_SECONDS = float(os.getenv("RESULT_TIMEOUT_SECONDS", "30"))
 
 
 class BatchRunner:
@@ -21,13 +17,16 @@ class BatchRunner:
         logger,
         worker_instance_ids: list[str],
         max_inflight_per_worker: int,
+        result_timeout_seconds: float,
     ) -> None:
         self.zenoh_session = zenoh_session
         self.result_dispatcher = result_dispatcher
         self.consumer_pub = consumer_pub
         self.logger = logger
+
         self.worker_instance_ids = worker_instance_ids
         self.max_inflight_per_worker = max_inflight_per_worker
+        self.result_timeout_seconds = result_timeout_seconds
 
         self.consumer_pub_lock = threading.Lock()
         self.worker_lock = threading.Lock()
@@ -106,7 +105,8 @@ class BatchRunner:
 
             if not available_workers:
                 raise RuntimeError(
-                    f"No Zenoh worker instance capacity available for filter_id={filter_id}"
+                    f"No Zenoh worker instance capacity available for "
+                    f"filter_id={filter_id}"
                 )
 
             selected_worker = min(
@@ -118,7 +118,8 @@ class BatchRunner:
 
             self.logger.info(
                 "[orchestrator] reserved worker instance: "
-                "filter_id=%s worker_instance_id=%s inflight=%s max_inflight=%s",
+                "filter_id=%s worker_instance_id=%s inflight=%s "
+                "max_inflight=%s",
                 filter_id,
                 selected_worker,
                 self.worker_inflight[selected_worker],
@@ -137,6 +138,7 @@ class BatchRunner:
                     "worker_instance_id=%s",
                     worker_instance_id,
                 )
+
                 self.worker_inflight[worker_instance_id] = 0
 
             self.logger.info(
@@ -198,7 +200,8 @@ class BatchRunner:
             expected_result_count,
         )
 
-        deadline = time.monotonic() + RESULT_TIMEOUT_SECONDS
+        deadline = time.monotonic() + self.result_timeout_seconds
+
         results: list[chores_pb2.ChoreFilterResult] = []
         seen_filter_ids: set[str] = set()
 
@@ -208,12 +211,16 @@ class BatchRunner:
             if remaining <= 0:
                 raise TimeoutError(
                     f"Timed out waiting for chore filter result: "
-                    f"filter_id={filter_id} received={len(results)} "
+                    f"filter_id={filter_id} "
+                    f"received={len(results)} "
                     f"expected={expected_result_count}"
                 )
 
             try:
-                result = result_queue.get(timeout=min(remaining, 0.25))
+                result = result_queue.get(
+                    timeout=min(remaining, 0.25)
+                )
+
             except queue.Empty:
                 continue
 
@@ -230,7 +237,8 @@ class BatchRunner:
 
             self.logger.info(
                 "[orchestrator] received chore filter result %s/%s: "
-                "filter_id=%s chores_id=%s person_id=%s accepted=%s rejected=%s "
+                "filter_id=%s chores_id=%s person_id=%s "
+                "accepted=%s rejected=%s "
                 "used_minutes=%s remaining_minutes=%s",
                 len(results),
                 expected_result_count,
@@ -264,9 +272,13 @@ class BatchRunner:
         )
 
         summary.results.extend(results)
+
         return summary
 
-    def _publish_summary(self, summary: chores_pb2.ChoreFilterSummary) -> None:
+    def _publish_summary(
+        self,
+        summary: chores_pb2.ChoreFilterSummary,
+    ) -> None:
         with self.consumer_pub_lock:
             self.consumer_pub.put(summary.SerializeToString())
 

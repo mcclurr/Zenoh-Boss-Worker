@@ -1,0 +1,15 @@
+{
+  "name": "chores_only_no_processing",
+  "window_seconds": 0.05,
+  "max_active_filters": 4,
+  "events": [
+    {
+      "type": "chores",
+      "chores_id": "chores-001",
+      "chores": [
+        { "chore_id": "chore-1", "name": "wash dishes", "estimated_minutes": 10 }
+      ]
+    }
+  ],
+  "expected_calls": []
+}

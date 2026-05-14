@@ -28,6 +28,6 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["python/src"]
-testpaths = ["python/tests"]
+pythonpath = ["src", "generated"]
+testpaths = ["tests"]
 addopts = "-v"

@@ -1,4 +1,3 @@
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -6,16 +5,7 @@ from dataclasses import dataclass
 from chores import chores_pb2
 
 from bw.services.orchestrator.batch_runner import BatchRunner
-
-
-PERSON_GATHER_WINDOW_SECONDS = float(os.getenv("PERSON_GATHER_WINDOW_SECONDS", ""))
-PERSON_LAST_SUCCESS_TTL_SECONDS = float(os.getenv("PERSON_LAST_SUCCESS_TTL_SECONDS", ""))
-ZENOH_WORKER_IDS = os.getenv("ZENOH_WORKER_IDS", "")
-WORKER_MAX_CONCURRENT_REQUESTS = int(os.getenv("WORKER_MAX_CONCURRENT_REQUESTS", ""))
-
-MAX_ACTIVE_FILTERS = WORKER_MAX_CONCURRENT_REQUESTS * len(
-    [worker_id for worker_id in ZENOH_WORKER_IDS.split(",") if worker_id.strip()]
-)
+from bw.services.orchestrator.config import OrchestratorConfig
 
 
 @dataclass
@@ -37,18 +27,20 @@ class BatchCoordinator:
     def __init__(
         self,
         batch_runner: BatchRunner,
+        config: OrchestratorConfig,
         logger,
     ) -> None:
         self.batch_runner = batch_runner
+        self.config = config
         self.logger = logger
 
         self.lock = threading.Lock()
 
-        # Chores are now latest-known state, not the thing that opens the window.
+        # Latest known chores state.
         self.latest_chores: chores_pb2.Chores | None = None
         self.latest_chores_received_monotonic: float | None = None
 
-        # Person/job messages now open and fill the active window.
+        # Active person/job collection window.
         self.current_window: PersonWindow | None = None
 
         self.active_filter_count = 0
@@ -56,15 +48,16 @@ class BatchCoordinator:
         # person_id -> last selected monotonic timestamp
         self.person_last_selected: dict[str, float] = {}
 
-    def on_topic_a(self, sample) -> None:
+    def receive_chores(
+        self,
+        chores: chores_pb2.Chores,
+    ) -> None:
         """
         Receive chores.
 
-        Chores no longer start the processing timer. They are stored as the
-        latest known chores state and used when the current person window flushes.
+        Chores do not open processing windows. They are stored as the latest
+        known chores state and used when the current person window flushes.
         """
-        chores = chores_pb2.Chores()
-        chores.ParseFromString(sample.payload.to_bytes())
         now = time.monotonic()
 
         with self.lock:
@@ -78,31 +71,33 @@ class BatchCoordinator:
             self.latest_chores_received_monotonic = now
 
         self.logger.info(
-            "[orchestrator] stored latest chores: chores_id=%s chores=%s "
-            "previous_chores_id=%s",
+            "[orchestrator] stored latest chores: "
+            "chores_id=%s chores=%s previous_chores_id=%s",
             chores.chores_id,
             len(chores.chores),
             old_chores_id,
         )
 
-    def on_topic_b(self, sample) -> None:
+    def receive_person(
+        self,
+        person: chores_pb2.PersonAvailability,
+    ) -> None:
         """
         Receive person/job availability.
 
-        Person messages now drive the processing window. The first person message
-        opens the window and starts the timer. More people can join until the timer
-        expires.
+        Person messages drive the processing window. The first person message
+        opens the window and starts the timer. Additional people may join until
+        the timer expires.
         """
-        person = chores_pb2.PersonAvailability()
-        person.ParseFromString(sample.payload.to_bytes())
         now = time.monotonic()
 
         with self.lock:
             if self.current_window is None:
                 timer = threading.Timer(
-                    PERSON_GATHER_WINDOW_SECONDS,
+                    self.config.person_gather_window_seconds,
                     self._flush_current_window,
                 )
+
                 timer.daemon = True
 
                 self.current_window = PersonWindow(
@@ -119,7 +114,7 @@ class BatchCoordinator:
                     "person_gather_window=%.3fs",
                     person.cycle_id,
                     person.person_id,
-                    PERSON_GATHER_WINDOW_SECONDS,
+                    self.config.person_gather_window_seconds,
                 )
 
             self.current_window.sequence_number += 1
@@ -142,7 +137,8 @@ class BatchCoordinator:
         self.logger.info(
             "[orchestrator] received person availability: "
             "cycle_id=%s person_id=%s available_minutes=%s "
-            "pending_unique_people=%s sequence_number=%s latest_chores_id=%s",
+            "pending_unique_people=%s sequence_number=%s "
+            "latest_chores_id=%s",
             person.cycle_id,
             person.person_id,
             person.available_minutes,
@@ -151,7 +147,10 @@ class BatchCoordinator:
             latest_chores_id,
         )
 
-    def expire_stale_if_idle(self, now: float) -> None:
+    def expire_stale_if_idle(
+        self,
+        now: float,
+    ) -> None:
         with self.lock:
             self._prune_person_history_locked(now)
 
@@ -171,6 +170,7 @@ class BatchCoordinator:
                     "chores message is available: dropped_people=%s",
                     dropped_count,
                 )
+
                 return
 
             if not window.pending_people:
@@ -178,22 +178,27 @@ class BatchCoordinator:
                     "[orchestrator] dropping person window because no person "
                     "availability messages arrived"
                 )
+
                 return
 
-            available_slots = MAX_ACTIVE_FILTERS - self.active_filter_count
+            available_slots = (
+                self.config.max_active_filters
+                - self.active_filter_count
+            )
 
             if available_slots <= 0:
                 dropped_count = len(window.pending_people)
 
                 self.logger.info(
-                    "[orchestrator] dropping person window because no filter slots "
-                    "are available: latest_chores_id=%s active=%s max=%s "
-                    "dropped_people=%s",
+                    "[orchestrator] dropping person window because no filter "
+                    "slots are available: latest_chores_id=%s active=%s "
+                    "max=%s dropped_people=%s",
                     self.latest_chores.chores_id,
                     self.active_filter_count,
-                    MAX_ACTIVE_FILTERS,
+                    self.config.max_active_filters,
                     dropped_count,
                 )
+
                 return
 
             people_to_run = self._choose_people_to_run_locked(
@@ -229,6 +234,7 @@ class BatchCoordinator:
                     args=(chores, person),
                     daemon=True,
                 )
+
                 thread.start()
 
             self.logger.info(
@@ -238,7 +244,7 @@ class BatchCoordinator:
                 list(selected_person_ids),
                 dropped_person_ids,
                 self.active_filter_count,
-                MAX_ACTIVE_FILTERS,
+                self.config.max_active_filters,
             )
 
     def _choose_people_to_run_locked(
@@ -271,11 +277,13 @@ class BatchCoordinator:
                 chores=chores,
                 person=person,
             )
+
             succeeded = True
 
         except Exception:
             self.logger.exception(
-                "[orchestrator] failed to run chore filter: person_id=%s",
+                "[orchestrator] failed to run chore filter: "
+                "person_id=%s",
                 person.person_id,
             )
 
@@ -286,15 +294,25 @@ class BatchCoordinator:
                 self.active_filter_count -= 1
 
                 if not succeeded:
-                    self.person_last_selected.pop(person.person_id, None)
+                    self.person_last_selected.pop(
+                        person.person_id,
+                        None,
+                    )
 
                 self._prune_person_history_locked(now)
 
-    def _prune_person_history_locked(self, now: float) -> None:
+    def _prune_person_history_locked(
+        self,
+        now: float,
+    ) -> None:
         stale_person_ids = [
             person_id
-            for person_id, last_selected in self.person_last_selected.items()
-            if now - last_selected > PERSON_LAST_SUCCESS_TTL_SECONDS
+            for person_id, last_selected
+            in self.person_last_selected.items()
+            if (
+                now - last_selected
+                > self.config.person_last_success_ttl_seconds
+            )
         ]
 
         for person_id in stale_person_ids:

@@ -1,0 +1,26 @@
+{
+  "name": "capacity_limits_people",
+  "window_seconds": 0.05,
+  "max_active_filters": 4,
+  "events": [
+    {
+      "type": "chores",
+      "chores_id": "chores-001",
+      "chores": [
+        { "chore_id": "chore-1", "name": "wash dishes", "estimated_minutes": 10 }
+      ]
+    },
+    { "type": "person", "person_id": "person-1", "available_minutes": 30 },
+    { "type": "person", "person_id": "person-2", "available_minutes": 30 },
+    { "type": "person", "person_id": "person-3", "available_minutes": 30 },
+    { "type": "person", "person_id": "person-4", "available_minutes": 30 },
+    { "type": "person", "person_id": "person-5", "available_minutes": 30 },
+    { "type": "person", "person_id": "person-6", "available_minutes": 30 }
+  ],
+  "expected_calls": [
+    { "chores_id": "chores-001", "person_id": "person-1", "available_minutes": 30 },
+    { "chores_id": "chores-001", "person_id": "person-2", "available_minutes": 30 },
+    { "chores_id": "chores-001", "person_id": "person-3", "available_minutes": 30 },
+    { "chores_id": "chores-001", "person_id": "person-4", "available_minutes": 30 }
+  ]
+}

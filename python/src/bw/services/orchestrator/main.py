@@ -1,4 +1,3 @@
-import os
 import time
 
 from bw.common.log import init_logging
@@ -9,25 +8,15 @@ from bw.messaging.zenoh import (
     open_zenoh_session,
 )
 from bw.services.orchestrator.batch_runner import BatchRunner
+from bw.services.orchestrator.config import load_orchestrator_config_from_env
 from bw.services.orchestrator.coordinator import BatchCoordinator
+from bw.services.orchestrator.handler import OrchestratorHandler
 from bw.services.orchestrator.result_dispatcher import ZenohResultDispatcher
-
-
-
-ZENOH_WORKER_IDS = [
-    worker_id.strip()
-    for worker_id in os.getenv("ZENOH_WORKER_IDS", "").split(",")
-    if worker_id.strip()
-]
-
-WORKER_MAX_CONCURRENT_REQUESTS = int(os.getenv("WORKER_MAX_CONCURRENT_REQUESTS", ""))
 
 
 def main() -> None:
     logger = init_logging("orchestrator-python")
-
-    if not ZENOH_WORKER_IDS:
-        raise RuntimeError("ZENOH_WORKER_IDS must contain at least one worker ID")
+    config = load_orchestrator_config_from_env()
 
     with open_zenoh_session() as zenoh_session:
         logger.info("[orchestrator] connected to Zenoh")
@@ -47,17 +36,24 @@ def main() -> None:
             result_dispatcher=result_dispatcher,
             consumer_pub=consumer_pub,
             logger=logger,
-            worker_instance_ids=ZENOH_WORKER_IDS,
-            max_inflight_per_worker=WORKER_MAX_CONCURRENT_REQUESTS,
+            worker_instance_ids=config.worker_ids,
+            max_inflight_per_worker=config.worker_max_concurrent_requests,
+            result_timeout_seconds=config.result_timeout_seconds,
         )
 
         coordinator = BatchCoordinator(
             batch_runner=batch_runner,
-            logger=logger
+            config=config,
+            logger=logger,
         )
 
-        zenoh_session.declare_subscriber(JOBS_BATCH_KEY, coordinator.on_topic_a)
-        zenoh_session.declare_subscriber(WORKER_STATUS_KEY, coordinator.on_topic_b)
+        handler = OrchestratorHandler(
+            coordinator=coordinator,
+            logger=logger,
+        )
+
+        zenoh_session.declare_subscriber(JOBS_BATCH_KEY, handler.on_chores_sample)
+        zenoh_session.declare_subscriber(WORKER_STATUS_KEY, handler.on_person_sample)
 
         logger.info(
             "[orchestrator] subscribed: chores_key=%s person_key=%s "
@@ -65,8 +61,8 @@ def main() -> None:
             JOBS_BATCH_KEY,
             WORKER_STATUS_KEY,
             ORCHESTRATOR_TO_CONSUMER_KEY,
-            ZENOH_WORKER_IDS,
-            WORKER_MAX_CONCURRENT_REQUESTS,
+            config.worker_ids,
+            config.worker_max_concurrent_requests,
         )
 
         while True:

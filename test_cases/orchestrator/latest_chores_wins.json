@@ -1,0 +1,25 @@
+{
+  "name": "latest_chores_wins",
+  "window_seconds": 0.05,
+  "max_active_filters": 4,
+  "events": [
+    {
+      "type": "chores",
+      "chores_id": "chores-old",
+      "chores": [
+        { "chore_id": "old-chore-1", "name": "old chore", "estimated_minutes": 10 }
+      ]
+    },
+    {
+      "type": "chores",
+      "chores_id": "chores-new",
+      "chores": [
+        { "chore_id": "new-chore-1", "name": "new chore", "estimated_minutes": 15 }
+      ]
+    },
+    { "type": "person", "person_id": "person-1", "available_minutes": 30 }
+  ],
+  "expected_calls": [
+    { "chores_id": "chores-new", "person_id": "person-1", "available_minutes": 30 }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "no_chores_drops_people",
+  "window_seconds": 0.05,
+  "max_active_filters": 4,
+  "events": [
+    { "type": "person", "person_id": "person-1", "available_minutes": 30 },
+    { "type": "person", "person_id": "person-2", "available_minutes": 20 }
+  ],
+  "expected_calls": []
+}

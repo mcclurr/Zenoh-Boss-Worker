@@ -1,0 +1,27 @@
+{
+  "name": "person_before_chores",
+  "window_seconds": 0.05,
+  "max_active_filters": 4,
+  "events": [
+    {
+      "type": "person",
+      "person_id": "person-1",
+      "available_minutes": 30
+    },
+    {
+      "type": "chores",
+      "chores_id": "chores-latest",
+      "chores": [
+        { "chore_id": "chore-1", "name": "wash dishes", "estimated_minutes": 10 },
+        { "chore_id": "chore-2", "name": "vacuum", "estimated_minutes": 20 }
+      ]
+    }
+  ],
+  "expected_calls": [
+    {
+      "chores_id": "chores-latest",
+      "person_id": "person-1",
+      "available_minutes": 30
+    }
+  ]
+}

@@ -15,7 +15,6 @@ use crate::execution::executor::{
 #[derive(Debug, Clone)]
 struct PendingPerson {
     message: PersonAvailability,
-    received_at: Instant,
     sequence_number: u64,
 }
 
@@ -116,7 +115,6 @@ impl BatchCoordinator {
             person.person_id.clone(),
             PendingPerson {
                 message: person.clone(),
-                received_at: now,
                 sequence_number: window.sequence_number,
             },
         );

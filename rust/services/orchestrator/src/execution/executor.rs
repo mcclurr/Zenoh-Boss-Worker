@@ -8,6 +8,7 @@ use bw_core::proto::demo::chores::{
 use crate::execution::batch_runner::BatchRunner;
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum JobSubmissionMode {
     PerPerson,
     WindowBatch,

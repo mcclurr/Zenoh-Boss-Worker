@@ -21,7 +21,7 @@ use bw_core::{
 use tokio::time;
 use tracing::info;
 
-use config::OrchestratorConfig;
+use config::load_orchestrator_config_from_env;
 use coordination::coordinator::BatchCoordinator;
 use execution::batch_runner::BatchRunner;
 use execution::executor::{
@@ -38,11 +38,7 @@ async fn main() -> Result<(), DynError> {
 
     info!("[orchestrator] rust orchestrator starting");
 
-    let config = OrchestratorConfig {
-        num_threads: 4,
-        person_gather_window_seconds: 0.25,
-        person_last_success_ttl_seconds: 30.0,
-    };
+    let config = load_orchestrator_config_from_env()?;
 
     let chores_key = jobs_batch_key();
     let person_key = worker_status_key();

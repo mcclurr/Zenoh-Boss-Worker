@@ -7,6 +7,10 @@ pub mod demo {
         include!(concat!(env!("OUT_DIR"), "/demo.assignment.rs"));
     }
 
+    pub mod chores {
+        include!(concat!(env!("OUT_DIR"), "/demo.chores.rs"));
+    }
+
     pub mod example1 {
         include!(concat!(env!("OUT_DIR"), "/demo.example1.rs"));
     }

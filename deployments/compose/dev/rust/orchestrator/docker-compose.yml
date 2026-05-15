@@ -1,11 +1,4 @@
 services:
-  rabbitmq:
-    image: rabbitmq:3-management
-    hostname: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-
   zenoh:
     image: eclipse/zenoh
     hostname: zenoh
@@ -19,64 +12,25 @@ services:
     build:
       context: ./../../../../..
       dockerfile: docker/Dockerfile.rust-app
-    container_name: orchestrator_rust
+    container_name: orchestrator
     depends_on:
-      - rabbitmq
       - zenoh
     command: ["/app/orchestrator"]
     volumes:
       - ./../../../../../out/rust:/app/out
     env_file:
-     - ./../../../../../.env
-    environment:
-      - RABBITMQ_HOST=rabbitmq
-      - ZENOH_ENDPOINT=tcp/zenoh:7447
-      - RUST_LOG=info
-
-  worker1:
-    build:
-      context: ./../../../../..
-      dockerfile: docker/Dockerfile.rust-app
-    container_name: worker1_rust
-    depends_on:
-      - rabbitmq
-    command: ["/app/worker"]
-    volumes:
-      - ./../../../../../out/rust:/app/out
-    env_file:
-     - ./../../../../../.env
-    environment:
-      - RABBITMQ_HOST=rabbitmq
-      - WORKER_NAME=worker-rust-1
-      - RUST_LOG=info
-
-  worker2:
-    build:
-      context: ./../../../../..
-      dockerfile: docker/Dockerfile.rust-app
-    container_name: worker2_rust
-    depends_on:
-      - rabbitmq
-    command: ["/app/worker"]
-    volumes:
-      - ./../../../../../out/rust:/app/out
-    env_file:
-     - ./../../../../../.env
-    environment:
-      - RABBITMQ_HOST=rabbitmq
-      - WORKER_NAME=worker-rust-2
-      - RUST_LOG=info
+      - ./../../../../../.env
 
   producer:
     build:
       context: ./../../../../..
       dockerfile: docker/Dockerfile.python-app
-    container_name: producer_python
+    container_name: producer
     depends_on:
       - zenoh
     command: ["python", "-u", "-m", "bw.services.producer.main"]
     volumes:
-      - ./../../../../../out/rust:/app/out
+      - ./../../../../../out/python:/app/out
     env_file:
      - ./../../../../../.env
     environment:
@@ -86,12 +40,12 @@ services:
     build:
       context: ./../../../../..
       dockerfile: docker/Dockerfile.python-app
-    container_name: consumer_python
+    container_name: consumer
     depends_on:
       - zenoh
     command: ["python", "-u", "-m", "bw.services.consumer.main"]
     volumes:
-      - ./../../../../../out/rust:/app/out
+      - ./../../../../../out/python:/app/out
     env_file:
      - ./../../../../../.env
     environment:

@@ -68,7 +68,7 @@ impl BatchCoordinator {
             .as_ref()
             .map(|chores| chores.chores_id.clone());
 
-        println!(
+        tracing::info!(
             "[coordinator] stored latest chores: chores_id={} chores={} previous_chores_id={:?}",
             chores.chores_id,
             chores.chores.len(),
@@ -86,7 +86,7 @@ impl BatchCoordinator {
         let now = Instant::now();
 
         if self.current_window.is_none() {
-            println!(
+            tracing::info!(
                 "[coordinator] opened person window: first_cycle_id={} first_person_id={} window_seconds={}",
                 person.cycle_id,
                 person.person_id,
@@ -121,7 +121,7 @@ impl BatchCoordinator {
             },
         );
 
-        println!(
+        tracing::info!(
             "[coordinator] received person availability: cycle_id={} person_id={} available_minutes={} pending_unique_people={} sequence_number={} latest_chores_id={:?}",
             person.cycle_id,
             person.person_id,
@@ -167,7 +167,7 @@ impl BatchCoordinator {
         };
 
         let Some(chores) = self.latest_chores.clone() else {
-            println!(
+            tracing::warn!(
                 "[coordinator] dropping person window because no latest chores message is available: dropped_people={}",
                 window.pending_people.len(),
             );
@@ -175,14 +175,14 @@ impl BatchCoordinator {
         };
 
         if window.pending_people.is_empty() {
-            println!(
+            tracing::warn!(
                 "[coordinator] dropping person window because no person availability messages arrived"
             );
             return;
         }
 
         if self.active_filter_count > 0 {
-            println!(
+            tracing::warn!(
                 "[coordinator] dropping person window because another batch is still active: latest_chores_id={} active={} max={} dropped_people={}",
                 chores.chores_id,
                 self.active_filter_count,
@@ -222,7 +222,7 @@ impl BatchCoordinator {
             })
             .collect();
 
-        println!(
+        tracing::info!(
             "[coordinator] flushing person window using latest chores: chores_id={} selected={:?} dropped={:?} active={} max={}",
             chores.chores_id,
             selected_person_ids,
@@ -262,7 +262,7 @@ impl BatchCoordinator {
         completion: PersonJobCompletion,
     ) {
         if self.active_filter_count == 0 {
-            println!("[coordinator] active filter count would go negative");
+            tracing::warn!("[coordinator] active filter count would go negative");
         } else {
             self.active_filter_count -= 1;
         }
@@ -272,7 +272,7 @@ impl BatchCoordinator {
                 .remove(&completion.person_id);
         }
 
-        println!(
+        tracing::info!(
             "[coordinator] completed person job: person_id={} succeeded={} active={} max={}",
             completion.person_id,
             completion.succeeded,
@@ -305,7 +305,7 @@ impl BatchCoordinator {
         }
 
         if !stale_person_ids.is_empty() {
-            println!(
+            tracing::info!(
                 "[coordinator] pruned person history: count={}",
                 stale_person_ids.len(),
             );

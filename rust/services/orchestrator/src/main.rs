@@ -144,6 +144,12 @@ async fn main() -> Result<(), DynError> {
 
             completion = completion_rx.recv() => {
                 if let Some(completion) = completion {
+                    tracing::info!(
+                        "[orchestrator] received job completion: person_id={} succeeded={}",
+                        completion.person_id,
+                        completion.succeeded,
+                    );
+
                     let mut coordinator = coordinator
                         .lock()
                         .expect("coordinator mutex poisoned");

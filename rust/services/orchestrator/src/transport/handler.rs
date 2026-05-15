@@ -17,32 +17,42 @@ impl OrchestratorHandler {
     pub fn new(
         coordinator: Arc<Mutex<BatchCoordinator>>,
     ) -> Self {
-        Self {
-            coordinator,
-        }
+        Self { coordinator }
     }
 
     pub fn on_chores_bytes(
         &self,
         bytes: &[u8],
     ) {
+        tracing::info!(
+            "[handler] received raw chores payload: bytes={}",
+            bytes.len(),
+        );
+
         match Chores::decode(bytes) {
             Ok(chores) => {
-                println!(
-                    "[handler] received chores: chores_id={}",
+                tracing::info!(
+                    "[handler] decoded chores: chores_id={} chores={}",
                     chores.chores_id,
+                    chores.chores.len(),
                 );
 
-                if let Ok(mut coordinator) =
-                    self.coordinator.lock()
-                {
-                    coordinator.receive_chores(chores);
+                match self.coordinator.lock() {
+                    Ok(mut coordinator) => {
+                        coordinator.receive_chores(chores);
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            "[handler] failed to lock coordinator for chores: {}",
+                            err,
+                        );
+                    }
                 }
             }
 
             Err(error) => {
-                eprintln!(
-                    "[handler] failed to decode chores: {:?}",
+                tracing::error!(
+                    "[handler] failed to decode chores: error={:?}",
                     error,
                 );
             }
@@ -53,23 +63,36 @@ impl OrchestratorHandler {
         &self,
         bytes: &[u8],
     ) {
+        tracing::info!(
+            "[handler] received raw person payload: bytes={}",
+            bytes.len(),
+        );
+
         match PersonAvailability::decode(bytes) {
             Ok(person) => {
-                println!(
-                    "[handler] received person: person_id={}",
+                tracing::info!(
+                    "[handler] decoded person availability: cycle_id={} person_id={} available_minutes={}",
+                    person.cycle_id,
                     person.person_id,
+                    person.available_minutes,
                 );
 
-                if let Ok(mut coordinator) =
-                    self.coordinator.lock()
-                {
-                    coordinator.receive_person(person);
+                match self.coordinator.lock() {
+                    Ok(mut coordinator) => {
+                        coordinator.receive_person(person);
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            "[handler] failed to lock coordinator for person: {}",
+                            err,
+                        );
+                    }
                 }
             }
 
             Err(error) => {
-                eprintln!(
-                    "[handler] failed to decode person: {:?}",
+                tracing::error!(
+                    "[handler] failed to decode person: error={:?}",
                     error,
                 );
             }

@@ -6,22 +6,30 @@ mod transport;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use bw_core::{
+    config::DynError,
+    logging::init_logging,
+};
+
+use tracing::info;
 
 use config::OrchestratorConfig;
 use coordination::coordinator::BatchCoordinator;
+use execution::batch_runner::BatchRunner;
 use execution::executor::{
     build_window_executor,
     JobSubmissionMode,
 };
-use execution::batch_runner::BatchRunner;
 use transport::handler::OrchestratorHandler;
 
-const JOB_SUBMISSION_MODE: JobSubmissionMode =
-    JobSubmissionMode::PerPerson;
+const JOB_SUBMISSION_MODE: JobSubmissionMode = JobSubmissionMode::PerPerson;
 
-fn main() {
-    println!("[orchestrator] rust orchestrator starting");
+fn main() -> Result<(), DynError> {
+    let _guard = init_logging("orchestrator-rust")?;
+
+    info!("[orchestrator] rust orchestrator starting");
 
     let config = OrchestratorConfig {
         num_threads: 4,
@@ -29,12 +37,8 @@ fn main() {
         person_last_success_ttl_seconds: 30.0,
     };
 
-    println!(
-        "[orchestrator] config loaded: \
-        num_threads={} \
-        person_gather_window_seconds={} \
-        person_last_success_ttl_seconds={} \
-        job_submission_mode={:?}",
+    info!(
+        "[orchestrator] config loaded: num_threads={} person_gather_window_seconds={} person_last_success_ttl_seconds={} job_submission_mode={:?}",
         config.num_threads,
         config.person_gather_window_seconds,
         config.person_last_success_ttl_seconds,
@@ -59,12 +63,12 @@ fn main() {
         Arc::clone(&coordinator),
     );
 
-    println!("[orchestrator] initialized");
+    info!("[orchestrator] initialized");
 
     loop {
         thread::sleep(Duration::from_millis(100));
 
-        let now = std::time::Instant::now();
+        let now = Instant::now();
 
         if let Ok(mut coordinator) = coordinator.lock() {
             coordinator.expire_stale_if_idle(now);

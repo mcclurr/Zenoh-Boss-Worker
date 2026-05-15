@@ -30,7 +30,7 @@ services:
       - zenoh
     command: ["python", "-u", "-m", "bw.services.producer.main"]
     volumes:
-      - ./../../../../../out/python:/app/out
+      - ./../../../../../out/rust:/app/out
     env_file:
      - ./../../../../../.env
     environment:
@@ -45,7 +45,7 @@ services:
       - zenoh
     command: ["python", "-u", "-m", "bw.services.consumer.main"]
     volumes:
-      - ./../../../../../out/python:/app/out
+      - ./../../../../../out/rust:/app/out
     env_file:
      - ./../../../../../.env
     environment:

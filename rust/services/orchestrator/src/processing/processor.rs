@@ -4,6 +4,7 @@ use bw_core::proto::demo::chores::{
     ChoreFilterRequest,
     ChoreFilterResult,
 };
+use std::time::Duration;
 
 pub fn process_chore_filter_request(
     request: ChoreFilterRequest,
@@ -25,6 +26,8 @@ pub fn process_chore_filter_request(
             rejected_chores.push(chore.clone());
         }
     }
+
+    std::thread::sleep(Duration::from_secs(2));
 
     ChoreFilterResult {
         filter_id: request.filter_id,

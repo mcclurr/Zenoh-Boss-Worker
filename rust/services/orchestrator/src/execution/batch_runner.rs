@@ -56,7 +56,10 @@ impl BatchRunner {
             person,
         );
 
-        let result = process_chore_filter_request(request);
+        let result = tokio::task::spawn_blocking(move || {
+            process_chore_filter_request(request)
+        })
+        .await?;
 
         let summary = Self::build_summary(
             chores.chores_id,
@@ -79,19 +82,31 @@ impl BatchRunner {
             chores.chores.len(),
         );
 
-        let mut results: Vec<ChoreFilterResult> = Vec::new();
+        let chores_for_worker = chores.clone();
 
-        for person in people {
-            let filter_id = format!("{}-{}", chores.chores_id, person.person_id);
+        let results: Vec<ChoreFilterResult> =
+            tokio::task::spawn_blocking(move || {
+                let mut results = Vec::new();
 
-            let request = Self::build_chore_filter_request(
-                filter_id,
-                chores.clone(),
-                person,
-            );
+                for person in people {
+                    let filter_id = format!(
+                        "{}-{}",
+                        chores_for_worker.chores_id,
+                        person.person_id,
+                    );
 
-            results.push(process_chore_filter_request(request));
-        }
+                    let request = Self::build_chore_filter_request(
+                        filter_id,
+                        chores_for_worker.clone(),
+                        person,
+                    );
+
+                    results.push(process_chore_filter_request(request));
+                }
+
+                results
+            })
+            .await?;
 
         let summary = Self::build_summary(
             chores.chores_id,

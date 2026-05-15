@@ -29,6 +29,7 @@ use execution::executor::{
     JobSubmissionMode,
 };
 use transport::handler::OrchestratorHandler;
+use tokio::sync::mpsc;
 
 const JOB_SUBMISSION_MODE: JobSubmissionMode = JobSubmissionMode::PerPerson;
 
@@ -65,9 +66,12 @@ async fn main() -> Result<(), DynError> {
 
     let batch_runner = BatchRunner::new(summary_pub);
 
+    let (completion_tx, mut completion_rx) = mpsc::unbounded_channel();
+
     let executor = build_window_executor(
         JOB_SUBMISSION_MODE,
         batch_runner,
+        completion_tx,
     );
 
     let coordinator = Arc::new(Mutex::new(
@@ -95,15 +99,33 @@ async fn main() -> Result<(), DynError> {
     loop {
         tokio::select! {
             sample = chores_sub.recv_async() => {
-                let sample = sample?;
-                let payload = sample.payload().to_bytes();
-                handler.on_chores_bytes(payload.as_ref());
+                match sample {
+                    Ok(sample) => {
+                        let payload = sample.payload().to_bytes();
+                        handler.on_chores_bytes(payload.as_ref());
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            "[orchestrator] failed to receive chores sample: {}",
+                            err,
+                        );
+                    }
+                }
             }
 
             sample = person_sub.recv_async() => {
-                let sample = sample?;
-                let payload = sample.payload().to_bytes();
-                handler.on_person_bytes(payload.as_ref());
+                match sample {
+                    Ok(sample) => {
+                        let payload = sample.payload().to_bytes();
+                        handler.on_person_bytes(payload.as_ref());
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            "[orchestrator] failed to receive person sample: {}",
+                            err,
+                        );
+                    }
+                }
             }
 
             _ = tick.tick() => {
@@ -113,7 +135,17 @@ async fn main() -> Result<(), DynError> {
                     .lock()
                     .expect("coordinator mutex poisoned");
 
-                coordinator.expire_stale_if_idle(now).await;
+                coordinator.expire_stale_if_idle(now);
+            }
+
+            completion = completion_rx.recv() => {
+                if let Some(completion) = completion {
+                    let mut coordinator = coordinator
+                        .lock()
+                        .expect("coordinator mutex poisoned");
+
+                    coordinator.on_person_complete(completion);
+                }
             }
         }
     }

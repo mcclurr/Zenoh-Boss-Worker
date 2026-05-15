@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+use tokio::sync::mpsc::UnboundedSender;
 
 use bw_core::proto::demo::chores::{
     Chores,
@@ -19,46 +19,51 @@ pub struct PersonJobCompletion {
     pub succeeded: bool,
 }
 
-#[async_trait]
 pub trait WindowExecutor {
-    async fn submit_window(
+    fn submit_window(
         &mut self,
         chores: Chores,
         people: Vec<PersonAvailability>,
-    ) -> Vec<PersonJobCompletion>;
+    );
 }
 
 pub struct PerPersonExecutor {
     batch_runner: BatchRunner,
+    completion_tx: UnboundedSender<PersonJobCompletion>,
 }
 
 impl PerPersonExecutor {
-    pub fn new(batch_runner: BatchRunner) -> Self {
-        Self { batch_runner }
+    pub fn new(
+        batch_runner: BatchRunner,
+        completion_tx: UnboundedSender<PersonJobCompletion>,
+    ) -> Self {
+        Self {
+            batch_runner,
+            completion_tx,
+        }
     }
 }
 
-#[async_trait]
 impl WindowExecutor for PerPersonExecutor {
-    async fn submit_window(
+    fn submit_window(
         &mut self,
         chores: Chores,
         people: Vec<PersonAvailability>,
-    ) -> Vec<PersonJobCompletion> {
-        let mut handles = Vec::new();
-
+    ) {
         for person in people {
             let batch_runner = self.batch_runner.clone();
+            let completion_tx = self.completion_tx.clone();
+
             let chores = chores.clone();
             let person_id = person.person_id.clone();
 
             tracing::info!(
-                "[executor] starting per-person job: chores_id={} person_id={}",
+                "[executor] started per-person job: chores_id={} person_id={}",
                 chores.chores_id,
                 person_id,
             );
 
-            let handle = tokio::spawn(async move {
+            tokio::spawn(async move {
                 let succeeded = match batch_runner
                     .run_chore_filter(chores, person)
                     .await
@@ -74,51 +79,47 @@ impl WindowExecutor for PerPersonExecutor {
                     }
                 };
 
-                PersonJobCompletion {
-                    person_id,
-                    succeeded,
-                }
-            });
-
-            handles.push(handle);
-        }
-
-        let mut completions = Vec::new();
-
-        for handle in handles {
-            match handle.await {
-                Ok(completion) => completions.push(completion),
-                Err(err) => {
+                if completion_tx
+                    .send(PersonJobCompletion {
+                        person_id,
+                        succeeded,
+                    })
+                    .is_err()
+                {
                     tracing::error!(
-                        "[executor] failed to join per-person task: {}",
-                        err,
+                        "[executor] failed to send per-person completion"
                     );
                 }
-            }
+            });
         }
-
-        completions
     }
 }
 
 pub struct WindowBatchExecutor {
     batch_runner: BatchRunner,
+    completion_tx: UnboundedSender<PersonJobCompletion>,
 }
 
 impl WindowBatchExecutor {
-    pub fn new(batch_runner: BatchRunner) -> Self {
-        Self { batch_runner }
+    pub fn new(
+        batch_runner: BatchRunner,
+        completion_tx: UnboundedSender<PersonJobCompletion>,
+    ) -> Self {
+        Self {
+            batch_runner,
+            completion_tx,
+        }
     }
 }
 
-#[async_trait]
 impl WindowExecutor for WindowBatchExecutor {
-    async fn submit_window(
+    fn submit_window(
         &mut self,
         chores: Chores,
         people: Vec<PersonAvailability>,
-    ) -> Vec<PersonJobCompletion> {
+    ) {
         let batch_runner = self.batch_runner.clone();
+        let completion_tx = self.completion_tx.clone();
 
         let person_ids = people
             .iter()
@@ -126,56 +127,61 @@ impl WindowExecutor for WindowBatchExecutor {
             .collect::<Vec<_>>();
 
         tracing::info!(
-            "[executor] starting window-batch job: chores_id={} people={}",
+            "[executor] started window-batch job: chores_id={} people={}",
             chores.chores_id,
             people.len(),
         );
 
-        let handle = tokio::spawn(async move {
-            batch_runner
+        tokio::spawn(async move {
+            let succeeded = match batch_runner
                 .run_chore_filter_window(chores, people)
                 .await
+            {
+                Ok(()) => true,
+                Err(err) => {
+                    tracing::error!(
+                        "[executor] failed window-batch job: error={}",
+                        err,
+                    );
+                    false
+                }
+            };
+
+            for person_id in person_ids {
+                if completion_tx
+                    .send(PersonJobCompletion {
+                        person_id,
+                        succeeded,
+                    })
+                    .is_err()
+                {
+                    tracing::error!(
+                        "[executor] failed to send window-batch completion"
+                    );
+                }
+            }
         });
-
-        let succeeded = match handle.await {
-            Ok(Ok(())) => true,
-            Ok(Err(err)) => {
-                tracing::error!(
-                    "[executor] failed window-batch job: error={}",
-                    err,
-                );
-                false
-            }
-            Err(err) => {
-                tracing::error!(
-                    "[executor] failed to join window-batch task: {}",
-                    err,
-                );
-                false
-            }
-        };
-
-        person_ids
-            .into_iter()
-            .map(|person_id| PersonJobCompletion {
-                person_id,
-                succeeded,
-            })
-            .collect()
     }
 }
 
 pub fn build_window_executor(
     mode: JobSubmissionMode,
     batch_runner: BatchRunner,
+    completion_tx: UnboundedSender<PersonJobCompletion>,
 ) -> Box<dyn WindowExecutor + Send> {
     match mode {
         JobSubmissionMode::PerPerson => {
-            Box::new(PerPersonExecutor::new(batch_runner))
+            Box::new(PerPersonExecutor::new(
+                batch_runner,
+                completion_tx,
+            ))
         }
 
         JobSubmissionMode::WindowBatch => {
-            Box::new(WindowBatchExecutor::new(batch_runner))
+            Box::new(WindowBatchExecutor::new(
+                batch_runner,
+                completion_tx,
+            ))
         }
     }
 }

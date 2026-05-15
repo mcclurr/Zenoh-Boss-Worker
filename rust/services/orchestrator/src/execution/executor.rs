@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use bw_core::proto::demo::chores::{
     Chores,
     PersonAvailability,
@@ -17,8 +19,9 @@ pub struct PersonJobCompletion {
     pub succeeded: bool,
 }
 
+#[async_trait]
 pub trait WindowExecutor {
-    fn submit_window(
+    async fn submit_window(
         &mut self,
         chores: Chores,
         people: Vec<PersonAvailability>,
@@ -35,45 +38,63 @@ impl PerPersonExecutor {
     }
 }
 
+#[async_trait]
 impl WindowExecutor for PerPersonExecutor {
-    fn submit_window(
+    async fn submit_window(
         &mut self,
         chores: Chores,
         people: Vec<PersonAvailability>,
     ) -> Vec<PersonJobCompletion> {
-        let mut completions = Vec::new();
+        let mut handles = Vec::new();
 
         for person in people {
+            let batch_runner = self.batch_runner.clone();
+            let chores = chores.clone();
             let person_id = person.person_id.clone();
 
-            println!(
-                "[executor] running per-person job: chores_id={} person_id={}",
+            tracing::info!(
+                "[executor] starting per-person job: chores_id={} person_id={}",
                 chores.chores_id,
                 person_id,
             );
 
-            let succeeded = std::panic::catch_unwind({
-                let batch_runner = self.batch_runner.clone();
-                let chores = chores.clone();
-                let person = person.clone();
+            let handle = tokio::spawn(async move {
+                let succeeded = match batch_runner
+                    .run_chore_filter(chores, person)
+                    .await
+                {
+                    Ok(()) => true,
+                    Err(err) => {
+                        tracing::error!(
+                            "[executor] failed per-person job: person_id={} error={}",
+                            person_id,
+                            err,
+                        );
+                        false
+                    }
+                };
 
-                move || {
-                    let summary = batch_runner.run_chore_filter(chores, person);
+                PersonJobCompletion {
+                    person_id,
+                    succeeded,
+                }
+            });
 
-                    println!(
-                        "[executor] completed per-person summary: chores_id={} people_evaluated={} chores_accepted={}",
-                        summary.chores_id,
-                        summary.total_people_evaluated,
-                        summary.total_chores_accepted,
+            handles.push(handle);
+        }
+
+        let mut completions = Vec::new();
+
+        for handle in handles {
+            match handle.await {
+                Ok(completion) => completions.push(completion),
+                Err(err) => {
+                    tracing::error!(
+                        "[executor] failed to join per-person task: {}",
+                        err,
                     );
                 }
-            })
-            .is_ok();
-
-            completions.push(PersonJobCompletion {
-                person_id,
-                succeeded,
-            });
+            }
         }
 
         completions
@@ -90,40 +111,49 @@ impl WindowBatchExecutor {
     }
 }
 
+#[async_trait]
 impl WindowExecutor for WindowBatchExecutor {
-    fn submit_window(
+    async fn submit_window(
         &mut self,
         chores: Chores,
         people: Vec<PersonAvailability>,
     ) -> Vec<PersonJobCompletion> {
-        let person_ids: Vec<String> = people
+        let batch_runner = self.batch_runner.clone();
+
+        let person_ids = people
             .iter()
             .map(|person| person.person_id.clone())
-            .collect();
+            .collect::<Vec<_>>();
 
-        println!(
-            "[executor] running window-batch job: chores_id={} people={}",
+        tracing::info!(
+            "[executor] starting window-batch job: chores_id={} people={}",
             chores.chores_id,
             people.len(),
         );
 
-        let succeeded = std::panic::catch_unwind({
-            let batch_runner = self.batch_runner.clone();
-            let chores = chores.clone();
-            let people = people.clone();
+        let handle = tokio::spawn(async move {
+            batch_runner
+                .run_chore_filter_window(chores, people)
+                .await
+        });
 
-            move || {
-                let summary = batch_runner.run_chore_filter_window(chores, people);
-
-                println!(
-                    "[executor] completed window-batch summary: chores_id={} people_evaluated={} chores_accepted={}",
-                    summary.chores_id,
-                    summary.total_people_evaluated,
-                    summary.total_chores_accepted,
+        let succeeded = match handle.await {
+            Ok(Ok(())) => true,
+            Ok(Err(err)) => {
+                tracing::error!(
+                    "[executor] failed window-batch job: error={}",
+                    err,
                 );
+                false
             }
-        })
-        .is_ok();
+            Err(err) => {
+                tracing::error!(
+                    "[executor] failed to join window-batch task: {}",
+                    err,
+                );
+                false
+            }
+        };
 
         person_ids
             .into_iter()

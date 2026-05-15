@@ -7,6 +7,7 @@ rust-version = "1.85"
 [dependencies]
 bw-core = { path = "../../bw-core" }
 
+async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 prost = "0.13"
 lapin = "2.5"

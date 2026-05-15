@@ -132,15 +132,15 @@ impl BatchCoordinator {
         );
     }
 
-    pub fn expire_stale_if_idle(
+    pub async fn expire_stale_if_idle(
         &mut self,
         now: Instant,
     ) {
-        self.flush_window_if_expired(now);
+        self.flush_window_if_expired(now).await;
         self.prune_person_history(now);
     }
 
-    fn flush_window_if_expired(
+    async fn flush_window_if_expired(
         &mut self,
         now: Instant,
     ) {
@@ -155,10 +155,10 @@ impl BatchCoordinator {
             return;
         }
 
-        self.flush_current_window(now);
+        self.flush_current_window(now).await;
     }
 
-    fn flush_current_window(
+    async fn flush_current_window(
         &mut self,
         now: Instant,
     ) {
@@ -234,7 +234,7 @@ impl BatchCoordinator {
         let completions = self.executor.submit_window(
             chores,
             people_messages,
-        );
+        ).await;
 
         for completion in completions {
             self.on_person_complete(completion);

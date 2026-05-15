@@ -1,6 +1,11 @@
 use std::sync::Arc;
 
 use prost::Message;
+use rayon::{
+    ThreadPool,
+    ThreadPoolBuilder,
+};
+use tokio::sync::oneshot;
 
 use bw_core::{
     config::DynError,
@@ -17,21 +22,34 @@ use crate::processing::processor::process_chore_filter_request;
 
 pub struct BatchRunner {
     summary_pub: Arc<zenoh::pubsub::Publisher<'static>>,
+    worker_pool: Arc<ThreadPool>,
 }
 
 impl Clone for BatchRunner {
     fn clone(&self) -> Self {
         Self {
             summary_pub: Arc::clone(&self.summary_pub),
+            worker_pool: Arc::clone(&self.worker_pool),
         }
     }
 }
 
 impl BatchRunner {
-    pub fn new(summary_pub: zenoh::pubsub::Publisher<'static>) -> Self {
-        Self {
+    pub fn new(
+        summary_pub: zenoh::pubsub::Publisher<'static>,
+        num_worker_threads: usize,
+    ) -> Result<Self, DynError> {
+        let worker_pool = ThreadPoolBuilder::new()
+            .num_threads(num_worker_threads)
+            .thread_name(|index| {
+                format!("orchestrator-worker-{index}")
+            })
+            .build()?;
+
+        Ok(Self {
             summary_pub: Arc::new(summary_pub),
-        }
+            worker_pool: Arc::new(worker_pool),
+        })
     }
 
     pub async fn run_chore_filter(
@@ -56,10 +74,7 @@ impl BatchRunner {
             person,
         );
 
-        let result = tokio::task::spawn_blocking(move || {
-            process_chore_filter_request(request)
-        })
-        .await?;
+        let result = self.run_processor_on_worker(request).await?;
 
         let summary = Self::build_summary(
             chores.chores_id,
@@ -83,30 +98,35 @@ impl BatchRunner {
         );
 
         let chores_for_worker = chores.clone();
+        let worker_pool = Arc::clone(&self.worker_pool);
 
-        let results: Vec<ChoreFilterResult> =
-            tokio::task::spawn_blocking(move || {
-                let mut results = Vec::new();
+        let (tx, rx) = oneshot::channel();
 
-                for person in people {
-                    let filter_id = format!(
-                        "{}-{}",
-                        chores_for_worker.chores_id,
-                        person.person_id,
-                    );
+        worker_pool.spawn(move || {
+            let mut results = Vec::new();
 
-                    let request = Self::build_chore_filter_request(
-                        filter_id,
-                        chores_for_worker.clone(),
-                        person,
-                    );
+            for person in people {
+                let filter_id = format!(
+                    "{}-{}",
+                    chores_for_worker.chores_id,
+                    person.person_id,
+                );
 
-                    results.push(process_chore_filter_request(request));
-                }
+                let request = Self::build_chore_filter_request(
+                    filter_id,
+                    chores_for_worker.clone(),
+                    person,
+                );
 
-                results
-            })
-            .await?;
+                results.push(process_chore_filter_request(request));
+            }
+
+            let _ = tx.send(results);
+        });
+
+        let results = rx.await.map_err(|err| {
+            format!("window worker failed to return result: {err}")
+        })?;
 
         let summary = Self::build_summary(
             chores.chores_id,
@@ -115,6 +135,25 @@ impl BatchRunner {
         );
 
         self.publish_summary(summary).await
+    }
+
+    async fn run_processor_on_worker(
+        &self,
+        request: ChoreFilterRequest,
+    ) -> Result<ChoreFilterResult, DynError> {
+        let worker_pool = Arc::clone(&self.worker_pool);
+        let (tx, rx) = oneshot::channel();
+
+        worker_pool.spawn(move || {
+            let result = process_chore_filter_request(request);
+            let _ = tx.send(result);
+        });
+
+        let result = rx.await.map_err(|err| {
+            format!("worker failed to return result: {err}")
+        })?;
+
+        Ok(result)
     }
 
     fn build_chore_filter_request(

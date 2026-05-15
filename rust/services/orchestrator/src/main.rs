@@ -64,7 +64,10 @@ async fn main() -> Result<(), DynError> {
         .with(flume::bounded(1024))
         .await?;
 
-    let batch_runner = BatchRunner::new(summary_pub);
+    let batch_runner = BatchRunner::new(
+        summary_pub,
+        config.num_worker_threads,
+    )?;
 
     let (completion_tx, mut completion_rx) = mpsc::unbounded_channel();
 
@@ -86,11 +89,12 @@ async fn main() -> Result<(), DynError> {
     );
 
     info!(
-        "[orchestrator] subscribed: chores_key={} person_key={} summary_key={} num_threads={} job_submission_mode={:?}",
+        "[orchestrator] subscribed: chores_key={} person_key={} summary_key={} max_people_per_window={} num_worker_threads={} job_submission_mode={:?}",
         chores_key,
         person_key,
         summary_key,
-        config.num_threads,
+        config.max_people_per_window,
+        config.num_worker_threads,
         JOB_SUBMISSION_MODE,
     );
 

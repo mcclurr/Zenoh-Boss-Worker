@@ -2,15 +2,10 @@ use bw_core::config::DynError;
 
 #[derive(Debug, Clone)]
 pub struct OrchestratorConfig {
-    pub num_threads: usize,
+    pub max_people_per_window: usize,
+    pub num_worker_threads: usize,
     pub person_gather_window_seconds: f64,
     pub person_last_success_ttl_seconds: f64,
-}
-
-impl OrchestratorConfig {
-    pub fn max_active_filters(&self) -> usize {
-        self.num_threads
-    }
 }
 
 fn require_env(name: &str) -> Result<String, DynError> {
@@ -27,7 +22,8 @@ pub fn load_orchestrator_config_from_env()
     -> Result<OrchestratorConfig, DynError>
 {
     Ok(OrchestratorConfig {
-        num_threads: require_env("NUM_THREADS")?.parse()?,
+        max_people_per_window: require_env("MAX_PEOPLE_PER_WINDOW")?.parse()?,
+        num_worker_threads: require_env("NUM_WORKER_THREADS")?.parse()?,
         person_gather_window_seconds: require_env(
             "PERSON_GATHER_WINDOW_SECONDS",
         )?

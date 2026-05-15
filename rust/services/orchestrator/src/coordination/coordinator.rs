@@ -186,7 +186,7 @@ impl BatchCoordinator {
                 "[coordinator] dropping person window because another batch is still active: latest_chores_id={} active={} max={} dropped_people={}",
                 chores.chores_id,
                 self.active_filter_count,
-                self.config.max_active_filters(),
+                self.config.max_people_per_window,
                 window.pending_people.len(),
             );
             return;
@@ -194,7 +194,7 @@ impl BatchCoordinator {
 
         let people_to_run = self.choose_people_to_run(
             window.pending_people.values().cloned().collect(),
-            self.config.max_active_filters(),
+            self.config.max_people_per_window,
         );
 
         let selected_person_ids: Vec<String> = people_to_run
@@ -228,7 +228,7 @@ impl BatchCoordinator {
             selected_person_ids,
             dropped_person_ids,
             self.active_filter_count,
-            self.config.max_active_filters(),
+            self.config.max_people_per_window,
         );
 
         self.executor.submit_window(
@@ -277,7 +277,7 @@ impl BatchCoordinator {
             completion.person_id,
             completion.succeeded,
             self.active_filter_count,
-            self.config.max_active_filters(),
+            self.config.max_people_per_window,
         );
     }
 
